@@ -49,19 +49,62 @@ This SRS specifies requirements for:
 
 ---
 
-## 2. Technology Stack (and Why)
+## 2. Frontend Technology Stack (Recommended)
 
-### 2.1 Netlify (Frontend hosting + CI/CD)
+### 2.1 Frontend Framework: TypeScript + React + Vite
 **Why selected**
-- Fast developer workflow: Git-based deploys, preview deployments, rollbacks.
-- Suitable for multi-app frontends (multiple sites from one repo or separate sites per app).
-- Operational simplicity for static/SSR-lite frontends.
+- **Most mature ecosystem** for AI coding agents and development tools
+- **Largest talent pool** and library support for enterprise legal applications
+- **TypeScript** provides type safety and better API integration
+- **Vite** produces highly optimized static builds (HTML, CSS, JS) compatible with all hosting providers
+- **Fast iteration** and excellent debugging for search/chat applications with complex state
+- Easiest integration with Kinde SDK and modern testing toolchain
 
-**Role**
-- Hosts the VNlaw web apps UI.
-- Provides preview deploys for PRs and stage/prod environments.
+**Core libraries recommended:**
+- **TanStack Query** for API state management and caching
+- **Zod** for runtime schema validation
+- **shadcn/ui** for consistent component library
+- **React Hook Form** for form management
+- **Tailwind CSS** for styling
 
-### 2.2 Cloudflare (DNS + security perimeter)
+### 2.2 Alternative Frontend Options (Considered but not recommended)
+- **SvelteKit**: Smaller codebase but less enterprise standard, potentially limited Kinde SDK maturity
+- **Flutter Web**: Larger bundle sizes, feels "app-like" rather than web-native
+- **Blazor WASM**: Heavier payloads, slower first load, fewer web UI libraries
+- **Rust + WASM**: Smaller ecosystem, fewer ready-made UI components, steeper learning curve
+
+### 2.3 Architecture Pattern: Single Page Application (SPA)
+**Why SPA over SSR**
+- All features behind authentication → SEO not a priority
+- **Streaming responses** (SSE) and real-time chat easier in SPA context
+- **Simpler deployment** as static assets to Netlify
+- **Better separation** between frontend (Netlify) and backend (GCP)
+- **Reduced complexity** compared to Next.js App Router patterns
+
+### 2.4 Netlify (Frontend hosting + CI/CD)
+**Why selected**
+- **Zero-configuration deployment** with Vite (auto-detects `dist` output)
+- **Git automation**: Connect repo, auto-runs `npm run build`, publishes to `dist`
+- **Preview deployments** for PRs facilitate review of search/chat UX changes
+- **Manual drag-and-drop** option for quick deployments
+- **SPA redirect support** via `_redirects`: `/* /index.html 200` for React Router
+
+**Configuration**
+- Build command: `npm run build`
+- Publish directory: `dist`
+- Node version: current LTS
+- Environment variables: Kinde domain, API URLs, feature flags
+
+**Alternative deployment platforms**
+- **Vercel**: Zero-config Vite detection, similar workflow to Netlify
+- **GCP Cloud Storage**: Manual upload of `dist` folder with website configuration
+- **GCP Cloud Run**: Docker-based deployment with Nginx serving static files
+
+---
+
+## 3. Backend Technology Stack
+
+### 3.1 Cloudflare (DNS + security perimeter)
 **Why selected**
 - Centralized DNS and domain management for `vnlaw.app`.
 - WAF, DDoS mitigation, bot protection, rate-limiting at the edge.
@@ -71,7 +114,7 @@ This SRS specifies requirements for:
 - Authoritative DNS for `vnlaw.app`.
 - Security gateway in front of Netlify and public APIs (if exposed).
 
-### 2.3 Kinde (User management + authentication)
+### 3.2 Kinde (User management + authentication)
 **Why selected**
 - Managed OIDC authentication with Google login support.
 - Enables **domain restriction** and scalable user/session management.
@@ -81,7 +124,7 @@ This SRS specifies requirements for:
 - Primary identity provider for VNlaw web apps.
 - Issues access tokens consumed by backend services for authorization.
 
-### 2.4 GCP Cloud Run + Cloud Functions (Backend)
+### 3.3 GCP Cloud Run + Cloud Functions (Backend)
 **Why selected**
 - Aligns with existing backend investment and production system.
 - **Cloud Run** is ideal for the **Python BFF** (stable endpoints, scalable, containerized).
@@ -91,7 +134,7 @@ This SRS specifies requirements for:
 - Cloud Run: the authoritative API surface for web apps; validates Kinde JWT; orchestrates search/chat; performs token lookups/exchange.
 - Cloud Functions: existing services (e.g., OAuth token broker, proxies) and supporting endpoints.
 
-### 2.5 Firestore (MVP persistence)
+### 3.4 Firestore (MVP persistence)
 **Why selected**
 - Already in use for token storage and session-like state.
 - Low friction for MVP features (chat history, feedback, lightweight metadata).
@@ -100,7 +143,7 @@ This SRS specifies requirements for:
 - Stores `UserTokens` (Google OAuth tokens keyed by user email).
 - Stores sessions/conversation metadata for MVP (optional but recommended).
 
-### 2.6 PostgreSQL (Supabase or Neon) — Post-MVP or selective MVP
+### 3.5 PostgreSQL (Supabase or Neon) — Post-MVP or selective MVP
 **Why selected**
 - Strong relational model for cross-app data: analytics, auditing, conversation history at scale, feedback, permissions.
 - Managed Postgres reduces operational load.
@@ -110,16 +153,16 @@ This SRS specifies requirements for:
 - Optional system of record for durable product data across multiple VNlaw apps.
 - **Not required to ship MVP**; can be introduced when persistence/reporting requirements mature.
 
-### 2.7 GitHub (Source control)
+### 3.6 GitHub (Source control)
 **Why selected**
 - Standard PR-based collaboration, code review, and CI integration.
 - Works cleanly with Netlify deploy hooks and preview builds.
 
 ---
 
-## 3. Architecture Overview (Pattern A — Mandatory)
+## 4. Architecture Overview (Pattern A — Mandatory)
 
-### 3.1 Decision: Cloud Run BFF (Python) is the single frontend API
+### 4.1 Decision: Cloud Run BFF (Python) is the single frontend API
 **Decision:** The platform will use **Pattern A: Cloud Run BFF**.  
 Netlify serves UI; **all business logic** and sensitive operations are in GCP (Cloud Run/Functions).
 
@@ -127,7 +170,7 @@ Netlify serves UI; **all business logic** and sensitive operations are in GCP (C
 - Core orchestration is already Python-based; avoiding split-brain logic across Node (Netlify Functions) and Python reduces debugging cost.
 - Enables a consistent security model (token validation, domain checks, rate limits, auditing).
 
-### 3.2 High-level request flow
+### 4.2 High-level request flow
 1. User browses `https://vnlaw.app` (Cloudflare → Netlify).
 2. User signs in via Kinde (Google SSO).
 3. Frontend calls `https://api.vnlaw.app` (Cloudflare → Cloud Run BFF).
