@@ -1,10 +1,10 @@
 # VNlaw Web Apps Frontend Platform — Software Requirements Specification (SRS)
 **Document ID:** VNLAW-WEBAPPS-SRS
-**Version:** 1.3.0 (AI-Agent Ready)
+**Version:** 1.4.0 (AI-Agent Ready)
 **Status:** Draft (Build-ready baseline)
 **Primary application (App #1):** Precedent Search Bot (Web)
 **Repository:** Separate frontend repository (monorepo) e.g., `vnlaw-webapps`
-**Last updated:** 2025-12-22
+**Last updated:** 2025-12-23
 **Format:** Optimized for AI-assisted development with phased implementation  
 
 ---
@@ -30,6 +30,8 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 | Wireframes/Mockups | 🟡 Recommended | Figma link TBD |
 | This SRS | ✅ Ready | Current document |
 
+**⚠️ OpenAPI Governance Rule:** Agents MUST NOT implement frontend API integration until `openapi.yaml` exists and matches Section 6.2 exactly. See Section 6.0 for contract governance rules.
+
 ### MVP Scope Matrix
 | Feature | MVP | Post-MVP | Feature Flag |
 |---------|-----|----------|--------------|
@@ -37,11 +39,13 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 | Search: `infobank` scope | ❌ | ✅ | `INFOBANK_SEARCH_ENABLED` |
 | Search: `both` scope | ❌ | ✅ | Requires infobank |
 | Search: `workspace` scope | ❌ | ✅ | `WORKSPACE_SEARCH_ENABLED` |
-| Chat with streaming | ✅ | - | `STREAMING_ENABLED` |
+| Chat (non-streaming) | ✅ | - | - |
+| Chat with streaming | ❌ | ✅ | `STREAMING_ENABLED` |
 | Chat history persistence | ❌ | ✅ | `CHAT_HISTORY_ENABLED` |
 | Feedback | ✅ | - | `FEEDBACK_ENABLED` |
 | Export (Markdown) | ✅ | - | `EXPORT_ENABLED` |
 | Export (PDF) | ❌ | ✅ | - |
+| Demo Mode (MSW mocking) | ✅ | - | `VITE_DEMO_MODE` |
 
 ### Open Questions (Resolve Before Phase 2)
 1. ~~OpenAPI spec location~~ → Must be created
@@ -49,9 +53,10 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 3. Backend readiness: Confirm `/v1/search`, `/v1/chat/stream`, `/v1/feedback` endpoints are deployed
 
 ### Critical Implementation Notes
-- **SSE Streaming:** Cannot use `EventSource` (no Authorization header support). Must use `fetch()` + `ReadableStream`. See Section 6.2.4.
+- **SSE Streaming (Post-MVP):** Streaming is deferred to post-MVP. When implemented, cannot use `EventSource` (no Authorization header support). Must use `fetch()` + `ReadableStream`. See Section 6.2.4.
+- **Demo Mode:** Frontend MUST work fully with MSW mocks before backend exists. Enable via `VITE_DEMO_MODE=true`. See Section 10.2.
 - **Kinde Callback:** The `/callback` route is handled automatically by Kinde SDK; no explicit route component needed.
-- **Token Storage:** Kinde SDK stores tokens in memory by default (recommended for security).
+- **Token Storage:** Kinde SDK stores tokens in memory; use silent refresh for session persistence across reloads. See Section 8.1.
 
 ---
 
@@ -219,26 +224,40 @@ Netlify serves UI; **all business logic** and sensitive operations are in GCP (C
 5. Returns JSON responses to frontend (including citations and pagination cursors).
 
 ### 4.3 Critical "Kinde ↔ Google token handoff"
-**Problem addressed:** Kinde JWT cannot be used to query Google Workspace APIs.  
+**Problem addressed:** Kinde JWT cannot be used to query Google Workspace APIs.
 **Requirement:** Cloud Run BFF must map Kinde identity to stored Google tokens.
 
 **Rules**
-- Kinde is the source of truth for “who is logged in”.
+- Kinde is the source of truth for "who is logged in".
 - Google OAuth tokens are required only for Workspace-connected features.
 - If tokens are missing/expired/insufficient scope, backend returns `AUTH_GOOGLE_DISCONNECTED` with a `connectUrl`.
+
+### 4.4 Greenfield BFF Development (Parallel Development Safety)
+
+**Requirement:** The Cloud Run BFF for web apps is a **new, separate service**.
+
+**Rules**
+- **DO NOT** modify the existing Chat Bot codebase (`main.py` or related files).
+- The BFF is a **greenfield service** deployed independently.
+- **Initial development:** May vendor/copy relevant logic (e.g., Discovery Engine client setup, search parsing) from existing codebase as starting point.
+- **Future consolidation:** Plan to extract shared code into a common package after BFF is stable, to prevent drift between services.
+- Both services (existing bot + new BFF) operate in parallel with no shared runtime state.
+
+**Rationale:** This ensures the existing production Chat Bot remains stable and unaffected during web app development.
 
 ---
 
 ## 5. Functional Requirements
 
 ### 5.1 Authentication & Authorization
-**FR-AUTH-01 Login:** The app shall require users to authenticate via Kinde (Google login).  
-**FR-AUTH-02 Domain restriction:** The app shall only allow users with email domain `vnlaw.com.vn`.  
-**FR-AUTH-03 Session:** The app shall maintain a session across page reloads and support logout.  
-**FR-AUTH-04 API auth:** The app shall send Kinde access tokens to the backend in `Authorization: Bearer <token>`.  
+**FR-AUTH-01 Login:** The app shall require users to authenticate via Kinde (Google login).
+**FR-AUTH-02 Domain restriction:** The app shall only allow users with email domain `vnlaw.com.vn`.
+**FR-AUTH-03 Session persistence:** The app shall maintain a session across page reloads using Kinde SDK's silent refresh mechanism. Access tokens remain in memory (not localStorage); session persistence is achieved via secure session cookie managed by Kinde SDK.
+**FR-AUTH-04 API auth:** The app shall send Kinde access tokens to the backend in `Authorization: Bearer <token>`.
 **FR-AUTH-05 Google token linking (Workspace):** For Workspace features, the app shall detect if the backend indicates missing Google OAuth credentials and shall redirect the user to the backend-provided `connectUrl` to complete Google OAuth and link the credential to the current Kinde session.
+**FR-AUTH-06 Session timeout:** The app shall attempt silent token refresh before expiry; on failure, prompt re-login and return to the previous route after successful re-authentication.
 
-**FR-AUTH-06 Session timeout:** The app shall refresh tokens (if supported by Kinde SDK) before expiry; on failure, prompt re-login and return to the previous route.
+**Implementation Note:** Do NOT store access tokens in localStorage. Rely on Kinde SDK's built-in session management for security. See Section 8.1 for state storage details.
 
 ### 5.2 Precedent Search (App #1 Core)
 **FR-SEARCH-01 Query input:** Provide a query input supporting free-text legal queries.  
@@ -250,18 +269,40 @@ Netlify serves UI; **all business logic** and sensitive operations are in GCP (C
 **FR-SEARCH-07 Query validation:** Reject empty queries; enforce max query length (500 chars).
 
 ### 5.3 Chat (Answer + Citations)
-**FR-CHAT-01 Ask question:** Provide a chat UI for question-answering and follow-ups.  
-**FR-CHAT-02 Answer display:** Render answers with loading state.  
-**FR-CHAT-03 Citations:** Display citations/sources returned by backend (title + URL + optional snippet).  
-**FR-CHAT-04 Conversation state:** Maintain conversation history in-session; optionally persist via backend.  
-**FR-CHAT-05 Regenerate answer:** Allow “Regenerate” for the latest assistant message (backend flag `regenerate: true`).  
+**FR-CHAT-01 Ask question:** Provide a chat UI for question-answering and follow-ups.
+**FR-CHAT-02 Answer display:** Render answers with loading state. MVP uses non-streaming `/v1/chat` endpoint.
+**FR-CHAT-03 Citations:** Display citations/sources returned by backend (title + URL + optional snippet).
+**FR-CHAT-04 Conversation state:** Maintain conversation history in-session; optionally persist via backend.
+**FR-CHAT-05 Regenerate answer:** Allow "Regenerate" for the latest assistant message (backend flag `regenerate: true`).
 **FR-CHAT-06 Copy/export:** Allow copying answer text and exporting conversation (Markdown for MVP; PDF optional later).
 
+#### 5.3.1 Citation Rendering Rules (FR-CHAT-03 Details)
+
+**Deduplication:** Citations with identical URLs SHALL be deduplicated; display only the first occurrence.
+
+**Ordering:** Citations appear in order of first mention/return from the API (preserve API order).
+
+**Accumulation:** Citations are displayed in a sidebar/panel. On mobile, citations panel becomes a collapsible bottom sheet.
+
+**Display per citation:**
+- Title (required)
+- Source badge (precedent/infobank/workspace)
+- Snippet preview if available (truncated to ~100 chars)
+- Clickable URL (opens in new tab)
+
+**Empty state:** If no citations returned, hide citations panel or show "No sources cited" message.
+
 ### 5.4 Workspace Search (Feature-flagged)
-**FR-WS-01 Connect flow:** If Workspace scope is selected and backend returns `AUTH_GOOGLE_DISCONNECTED`, the app shall present a “Connect Google Workspace” prompt and redirect to `connectUrl`.  
-**FR-WS-02 Status display:** Show Workspace connection status (connected/disconnected) and connected Google account email if provided.  
-**FR-WS-03 OAuth error handling:** Gracefully handle cancel/denial and return user to the app with a message.  
+**FR-WS-01 Connect flow:** If Workspace scope is selected and backend returns `AUTH_GOOGLE_DISCONNECTED`, the app shall present a "Connect Google Workspace" prompt and redirect to `connectUrl`.
+**FR-WS-02 Status display:** Show Workspace connection status (connected/disconnected) and connected Google account email if provided.
+**FR-WS-03 OAuth error handling:** Gracefully handle cancel/denial and return user to the app with a message.
 **FR-WS-04 Disconnect (optional):** Provide a disconnect action if backend supports revoking tokens.
+**FR-WS-05 Post-connect verification:** After Google OAuth callback returns to the app, the frontend SHALL call `/v1/me` to verify `workspace.connected === true` before updating the UI to show "Connected" status. If verification fails, show error message with retry option.
+
+**OAuth Return Handling:**
+- Backend redirects to `/settings?workspace_connected=1` (or configured return URL) after successful OAuth.
+- Frontend detects query parameter and calls `/v1/me` to confirm connection status.
+- On confirmation failure, show "Connection verification failed. Please try again." with retry button.
 
 ### 5.5 Feedback
 **FR-FB-01 Feedback:** Provide thumbs up/down on answers with optional comment and send to backend.  
@@ -271,14 +312,77 @@ Netlify serves UI; **all business logic** and sensitive operations are in GCP (C
 
 ## 6. External Interface Requirements
 
+### 6.0 Contract Governance (OpenAPI as Source of Truth)
+
+The API contract is the foundation for parallel frontend/backend development. This section establishes governance rules to prevent drift and integration failures.
+
+#### 6.0.1 OpenAPI Specification Rules
+
+| Rule | Description |
+|------|-------------|
+| **Single Source of Truth** | `openapi.yaml` is the authoritative API contract |
+| **Frontend Conformance** | MSW mocks MUST be generated/validated against the OpenAPI schema |
+| **Backend Conformance** | Backend implementation MUST pass OpenAPI validation tests |
+| **Version Bumping** | Any contract change requires: (1) update `openapi.yaml`, (2) bump spec version, (3) update both frontend mocks and backend |
+| **Blocking Status** | Frontend API integration is BLOCKED until `openapi.yaml` exists and matches Section 6.2 |
+
+#### 6.0.2 Canonical Error Contract
+
+All non-2xx responses MUST use this schema (see Section 6.3 for full error codes):
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable summary",
+    "requestId": "uuid-string",
+    "details": {},
+    "retryable": true,
+    "retryAfterSeconds": 30
+  }
+}
+```
+
+**Frontend behavior MUST be driven by `error.code`**, not message string matching. This ensures consistent error handling regardless of message text changes.
+
+#### 6.0.3 HTTP Status Code Mapping
+
+| HTTP Status | Error Codes | Notes |
+|-------------|-------------|-------|
+| 400 | `INVALID_REQUEST`, `QUERY_TOO_LONG`, `VALIDATION_ERROR` | Client error, fix request |
+| 401 | `AUTH_INVALID_TOKEN` | Re-authenticate required |
+| 403 | `AUTH_DOMAIN_REJECTED`, `AUTH_GOOGLE_DISCONNECTED`, `FORBIDDEN` | Access denied |
+| 404 | `NOT_FOUND` | Resource not found |
+| 429 | `RATE_LIMITED` | Check `Retry-After` header |
+| 500 | `INTERNAL_ERROR` | Backend error |
+| 502 | `UPSTREAM_ERROR` | Dependency failure |
+| 503 | `SERVICE_UNAVAILABLE`, `DATASTORE_UNAVAILABLE` | Temporary unavailable |
+| 504 | `SEARCH_TIMEOUT` | Request timeout |
+| 207 | (success with `status: "partial"`) | Partial success, check `datastoreStatus` |
+
+#### 6.0.4 Sample JSON Files (Recommended)
+
+For agents implementing the frontend or backend, provide sanitized sample JSON files:
+
+1. **Discovery Engine search response** (1-2 results) — shows actual field names
+2. **Empty/no-results response** — for empty state handling
+3. **Error response examples** — for each major error category
+
+These samples reduce ambiguity and prevent field name mismatches.
+
 ### 6.1 Frontend routes (initial)
-- `/` Combined search + chat (recommended)
-- `/search` Dedicated search page (optional)
-- `/chat` Dedicated chat page (optional)
-- `/callback` Kinde OAuth callback (handled by Kinde SDK, no component needed)
-- `/access-denied` Domain rejected
-- `/settings` Connection status and toggles (optional)
-- `/status` Minimal diagnostics (optional)
+
+**MVP Routing Decision:** The combined search + chat page (`/`) is the canonical MVP implementation. Separate `/search` and `/chat` routes are post-MVP optional enhancements.
+
+| Route | MVP | Description |
+|-------|-----|-------------|
+| `/` | ✅ Required | Combined search + chat (canonical) |
+| `/callback` | ✅ Required | Kinde OAuth callback (handled by SDK) |
+| `/access-denied` | ✅ Required | Domain rejection page |
+| `/settings` | ✅ Required | Workspace connection status, user preferences |
+| `/search` | ❌ Post-MVP | Dedicated search page (optional) |
+| `/chat` | ❌ Post-MVP | Dedicated chat page (optional) |
+| `/status` | ❌ Optional | Minimal diagnostics for debugging |
 
 ### 6.2 API Interface (Cloud Run BFF) — v1
 **Versioning:** All endpoints are under `/v1`.
@@ -471,33 +575,112 @@ Response:
 #### 6.2.8 GET `/v1/health`
 Returns backend health and dependency status (no sensitive details).
 
-### 6.3 Standard error response schema
-All endpoints return errors in the following format:
+**Auth requirement:** No authentication required (public endpoint for monitoring).
+
+Response:
 ```json
 {
-  "error": {
-    "code": "string",
-    "message": "string",
-    "details": {},
-    "requestId": "string",
-    "retryable": true,
-    "retryAfterMs": 0
+  "status": "healthy|degraded|unhealthy",
+  "version": "1.0.0",
+  "timestamp": "2025-12-23T10:00:00Z",
+  "dependencies": {
+    "discovery_engine": {"status": "up", "latencyMs": 50},
+    "firestore": {"status": "up", "latencyMs": 10}
   }
 }
 ```
 
-**Error codes**
-- `AUTH_INVALID_TOKEN` (401)
-- `AUTH_DOMAIN_REJECTED` (403)
-- `AUTH_GOOGLE_DISCONNECTED` (403)
-- `RATE_LIMITED` (429)
-- `SEARCH_TIMEOUT` (504)
-- `SEARCH_PARTIAL_FAILURE` (207 or 200 with `"status":"partial"`)
-- `SERVICE_UNAVAILABLE` (503)
-- `DATASTORE_UNAVAILABLE` (503)
-- `INVALID_REQUEST` (400)
-- `QUERY_TOO_LONG` (400)
-- `INTERNAL_ERROR` (500)
+#### 6.2.9 Canonical Result Model
+
+**Purpose:** Ensure consistent field mapping between Discovery Engine responses and frontend expectations.
+
+**Authoritative Fields (Frontend expects these):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `title` | string | Yes | Document title |
+| `snippet` | string | Yes | Relevant excerpt (max 500 chars) |
+| `url` | string | Yes | Document URL |
+| `source` | enum | Yes | `precedent`\|`infobank`\|`workspace` |
+| `metadata.documentType` | enum | No | `judgment`\|`decree`\|`circular`\|`internal`\|`email`\|`doc` |
+| `metadata.date` | string | No | `YYYY-MM-DD` format |
+| `metadata.court` | string | No | Court name (for precedent) |
+| `metadata.caseNumber` | string | No | Case identifier |
+
+**Adapter Responsibility:**
+- Field mapping from Discovery Engine format to canonical format is the **BFF's responsibility**
+- Frontend receives only the canonical format defined above
+- If Discovery Engine uses different field names (e.g., `link` instead of `url`), BFF maps them
+- Frontend does NOT contain any Discovery Engine-specific logic
+
+**Example transformation (BFF responsibility):**
+```python
+# BFF maps Discovery Engine response to canonical format
+def map_search_result(de_result: dict) -> dict:
+    return {
+        "title": de_result.get("document", {}).get("title", ""),
+        "snippet": de_result.get("snippet", {}).get("text", ""),
+        "url": de_result.get("document", {}).get("uri", ""),  # 'uri' → 'url'
+        "source": determine_source(de_result),
+        "metadata": extract_metadata(de_result)
+    }
+```
+
+### 6.3 Standard error response schema
+
+All endpoints return errors in the following format (see Section 6.0.2 for governance rules):
+
+```json
+{
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human readable summary",
+    "details": {},
+    "requestId": "uuid-string",
+    "retryable": true,
+    "retryAfterSeconds": 30
+  }
+}
+```
+
+**Note:** `retryAfterSeconds` is in seconds (not milliseconds). See Section 6.6 for retry UX rules.
+
+**Error codes (canonical list)**
+
+| Code | HTTP | Description | Retryable |
+|------|------|-------------|-----------|
+| `AUTH_INVALID_TOKEN` | 401 | Token expired/invalid, re-authenticate | No |
+| `AUTH_DOMAIN_REJECTED` | 403 | Email domain not allowed | No |
+| `AUTH_GOOGLE_DISCONNECTED` | 403 | Google OAuth not linked; include `connectUrl` in details | No |
+| `FORBIDDEN` | 403 | General access denied | No |
+| `NOT_FOUND` | 404 | Resource not found | No |
+| `VALIDATION_ERROR` | 400 | Request validation failed; details contains field errors | No |
+| `INVALID_REQUEST` | 400 | Malformed request | No |
+| `QUERY_TOO_LONG` | 400 | Query exceeds max length | No |
+| `RATE_LIMITED` | 429 | Too many requests; check `Retry-After` header | Yes (1x) |
+| `SEARCH_TIMEOUT` | 504 | Search operation timed out | Yes (2x) |
+| `SEARCH_PARTIAL_FAILURE` | 207/200 | Partial success; check `datastoreStatus` | No |
+| `UPSTREAM_ERROR` | 502 | Dependency (Discovery Engine, etc.) failed | Yes (2x) |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable | Yes (3x) |
+| `DATASTORE_UNAVAILABLE` | 503 | Specific datastore unavailable | Yes (3x) |
+| `INTERNAL_ERROR` | 500 | Unexpected server error | Yes (1x) |
+
+**Special error details:**
+
+For `AUTH_GOOGLE_DISCONNECTED`:
+```json
+{
+  "error": {
+    "code": "AUTH_GOOGLE_DISCONNECTED",
+    "message": "Google Workspace not connected",
+    "details": {
+      "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=..."
+    },
+    "requestId": "...",
+    "retryable": false
+  }
+}
+```
 
 ### 6.5 Error Code → UX Mapping
 
@@ -520,7 +703,47 @@ All API responses include:
 - `X-RateLimit-Limit`
 - `X-RateLimit-Remaining`
 - `X-RateLimit-Reset`
-- `Retry-After` (on 429)
+- `Retry-After` (on 429, in seconds)
+
+### 6.6 Retry UX Canon
+
+This section defines the canonical retry behavior for consistent UX across all error scenarios.
+
+#### 6.6.1 Retry-After Header Precedence
+
+When determining wait time for retryable errors:
+
+1. **If `Retry-After` HTTP header is present** → use header value (seconds)
+2. **Else if JSON `retryAfterSeconds` is present** → use JSON value
+3. **Else** → use default backoff schedule from Section 7.2
+
+**Important:** `Retry-After` header is always in **seconds**. JSON field `retryAfterSeconds` is also in seconds. There is no milliseconds field.
+
+#### 6.6.2 Countdown Display Rules
+
+- Show countdown in seconds: "Retry in 5s", "Retry in 4s", etc.
+- Update countdown every second
+- Show "Retry now" button alongside countdown (allows immediate retry)
+- After countdown reaches 0, auto-retry once (if retryable)
+
+#### 6.6.3 Circuit Breaker Scope
+
+Circuit breaker state is **per-endpoint**, not global:
+
+| Endpoint | Circuit Key | Independent |
+|----------|-------------|-------------|
+| `/v1/search` | `circuit:search` | ✅ |
+| `/v1/chat` | `circuit:chat` | ✅ |
+| `/v1/feedback` | `circuit:feedback` | ✅ |
+
+**Rationale:** Opening the circuit for search should NOT block chat operations. Users can still chat even if search is temporarily unavailable.
+
+#### 6.6.4 Retry Indicator UX
+
+During automatic retries:
+- Show spinner with "Retrying... (attempt 2 of 3)"
+- If all retries exhausted, show "Retry" button + error message
+- Always display `requestId` for support reference
 
 ---
 
@@ -552,43 +775,104 @@ Retry matrix:
 - During open state, show countdown + “Try now” option.
 
 ### 7.3 Security
-- Enforce HTTPS everywhere.
-- Frontend must never store or log full JWTs (log only last 8 characters if needed).
-- Prefer in-memory tokens; avoid localStorage for access tokens (Kinde SDK dependent).
-- Apply CSP baseline (adjust as needed):
-  ```
-  default-src 'self';
-  script-src 'self' https://cdn.kinde.com;
-  style-src 'self' 'unsafe-inline';
-  img-src 'self' data: https:;
-  connect-src 'self' https://api.vnlaw.app https://*.kinde.com;
-  frame-ancestors 'none';
-  form-action 'self';
-  ```
-- Do not log PII in client logs; redact emails (mask local part).
+
+#### 7.3.1 Enforcement Boundaries
+
+**Critical Rule:** Frontend checks are **UX only**, not security boundaries.
+
+| Check | Frontend (UX) | Backend (Security) |
+|-------|---------------|-------------------|
+| Domain restriction | Shows friendly error | **MUST reject** non-domain users |
+| Token validation | Redirects to login | **MUST validate** JWT signature |
+| Rate limiting | Shows countdown | **MUST enforce** limits |
+| Workspace permissions | Shows "Connect" button | **MUST verify** Google tokens |
+
+The BFF **MUST reject** unauthorized requests regardless of frontend behavior. Frontend validation is for user experience only.
+
+#### 7.3.2 Token Security
+
+- Enforce HTTPS everywhere
+- Frontend must never store or log full JWTs (log only last 8 characters if needed)
+- Access tokens remain **in memory only**; do NOT use localStorage for tokens
+- Rely on Kinde SDK's silent refresh for session persistence
+
+#### 7.3.3 Content Security Policy
+
+Apply CSP baseline (adjust for staging/preview domains as needed):
+
+```
+default-src 'self';
+script-src 'self' https://cdn.kinde.com;
+style-src 'self' 'unsafe-inline';
+img-src 'self' data: https:;
+connect-src 'self' https://api.vnlaw.app https://*.kinde.com https://*.netlify.app;
+frame-ancestors 'none';
+form-action 'self';
+```
+
+**Notes:**
+- `connect-src` includes `*.netlify.app` for preview deployments
+- Kinde may use regional domains; validate in staging and update as needed
+- **No wildcards** except for verified Kinde/Netlify domains
+
+#### 7.3.4 PII Protection
+
+- Do not log PII in client logs
+- Redact emails in logs (show only domain, e.g., `***@vnlaw.com.vn`)
+- Never log request/response bodies in production (see Section 7.5)
 
 ### 7.4 Accessibility
 - WCAG 2.1 AA target for core flows.
 - Full keyboard navigation for search, chat, citations, modals.
 
 ### 7.5 Observability
-- Generate client session id on load; send via `X-Session-Id` on every request.
-- Log structured events (PII-safe): navigation, search submit/complete, chat send/complete, auth events, errors.
-- Surface backend `requestId` in UI for support.
+
+#### 7.5.1 Client-Side Identifiers
+
+- **Session ID:** Generate `X-Session-Id` on app load; persist in sessionStorage; send on every API request
+- **Request ID:** Generate `X-Request-Id` (UUID) for each API call; include in logs and display for errors
+- Both IDs must be generated even in **Demo Mode** to ensure correlation plumbing is tested
+
+#### 7.5.2 Structured Event Logging
+
+Log structured events (PII-safe) for:
+- Navigation events (route changes)
+- Search submit/complete (query length, scope, result count, duration)
+- Chat send/complete (scope, citation count, duration)
+- Auth events (login, logout, token refresh)
+- Errors (code, requestId, retryable)
+
+#### 7.5.3 Production Logging Restrictions
+
+**CRITICAL:** In production builds:
+- **NEVER** log request/response bodies for `/v1/chat` (may contain sensitive legal content)
+- **NEVER** log full JWTs or authorization headers
+- Log only: method, path, status code, duration, requestId, error code (if error)
+- Structured metadata only; no raw payloads
+
+#### 7.5.4 Support Reference
+
+- Surface backend `requestId` in UI for all errors
+- Format: "Error ID: {requestId}" with copy button
+- Users can provide this ID to support for investigation
 
 ---
 
 ## 8. State Management & Caching
 
 ### 8.1 State categories
-| State | Storage | Persistence |
-|---|---|---|
-| Auth | memory + secure cookie (preferred) | session |
-| UI prefs | localStorage | long-lived |
-| Search | URL params + memory | navigation |
-| Chat thread | memory | session |
-| Response cache | TanStack Query/SWR | session |
-| Recent searches | localStorage | per user |
+
+| State | Storage | Persistence | Notes |
+|---|---|---|---|
+| Auth tokens | **Memory only** | Session (via silent refresh) | Kinde SDK manages; never use localStorage |
+| Session ID | sessionStorage | Tab session | Generated on app load |
+| UI prefs | localStorage | Long-lived | Theme, results per page, etc. |
+| Search state | URL params + memory | Navigation | Enables shareable URLs |
+| Chat thread | Memory | Session | Optionally persist via backend |
+| Response cache | TanStack Query | Session | Stale-while-revalidate |
+| Recent searches | localStorage | Per user | Max 10 entries |
+
+**Auth Clarification:** Access tokens are stored in memory by Kinde SDK. Session persistence across page reloads is achieved via Kinde's silent refresh mechanism (uses secure cookies internally). Do NOT store tokens in localStorage.
 
 ### 8.2 URL state (required)
 - Search query reflected in URL, e.g. `/search?q=...&scope=precedent`
@@ -625,9 +909,48 @@ Retry matrix:
   - app logic: 70%
   - UI components: 60%
 
-### 10.2 Integration testing
-- Use MSW for API mocking
-- Validate auth flows, all scopes, chat multi-turn, error scenarios
+### 10.2 Integration Testing & Demo Mode
+
+#### 10.2.1 Demo Mode (Mandatory for Standalone Development)
+
+The frontend MUST work fully with MSW mocks before any backend is available. This enables parallel development and comprehensive UI testing.
+
+**Configuration:**
+- Enable via `VITE_DEMO_MODE=true` environment variable
+- **Visual indicator:** Display "Demo Mode" banner in header when active
+- In Demo Mode, all API calls are intercepted by MSW; no real backend required
+
+**Mock Coverage Required:**
+
+| Scenario | Endpoint | Mock Response |
+|----------|----------|---------------|
+| Search success | `POST /v1/search` | 2-5 results with metadata |
+| Search empty | `POST /v1/search` | Empty results array |
+| Search partial failure | `POST /v1/search` | `status: "partial"` with warnings |
+| Chat response | `POST /v1/chat` | Full answer with 2-3 citations |
+| User profile | `GET /v1/me` | Mock user with workspace status |
+| Feature flags | `GET /v1/flags` | MVP-appropriate flags |
+| Error: 401 | Any | `AUTH_INVALID_TOKEN` |
+| Error: 403 domain | Any | `AUTH_DOMAIN_REJECTED` |
+| Error: 403 workspace | `/v1/search` (workspace) | `AUTH_GOOGLE_DISCONNECTED` with `connectUrl` |
+| Error: 429 | Any | `RATE_LIMITED` with `retryAfterSeconds: 30` |
+| Error: 500 | Any | `INTERNAL_ERROR` |
+| Error: 503 | Any | `SERVICE_UNAVAILABLE` |
+
+**Latency Simulation:**
+- Add random delay (200-800ms) to all mock responses
+- Simulates real network conditions for UX testing
+
+**Mock Identity:**
+- In Demo Mode, use a mock authenticated user (do not skip auth plumbing)
+- Mock user: `demo@vnlaw.com.vn`, name: "Demo User"
+- This ensures auth UI components are tested even without real Kinde
+
+#### 10.2.2 Integration Testing (with MSW)
+
+- Use MSW for API mocking in all integration tests
+- Validate: auth flows, all scopes, chat multi-turn, error scenarios
+- Test all error codes from Section 6.3 with appropriate UI responses
 
 ### 10.3 E2E testing
 - Tool: Playwright (recommended)
@@ -699,10 +1022,46 @@ MVP is accepted when:
 
 ---
 
-## 16. Required Next Artifacts (Recommended)
-1) **OpenAPI spec (`openapi.yaml`)** for `/v1/search`, `/v1/chat`, `/v1/chat/stream`, `/v1/health`.
-2) Frontend monorepo scaffolding (apps + packages) with shared UI/auth/api-client packages.
-3) A minimal Figma wireframe set for: empty state, results, chat, citations, connect flow, error states.
+## 16. Required Next Artifacts
+
+### 16.1 Blocking Artifacts (Required Before Phase 2)
+
+| Artifact | Status | Owner | Notes |
+|----------|--------|-------|-------|
+| `openapi.yaml` | 🔴 BLOCKING | TBD | Must match Section 6.2; see Section 6.0 for governance |
+| Sample JSON files | 🟡 Recommended | Backend | Discovery Engine responses (see Section 6.0.4) |
+
+### 16.2 Recommended Artifacts
+
+1. **OpenAPI spec (`openapi.yaml`)** for:
+   - `POST /v1/search`
+   - `POST /v1/chat` (non-streaming MVP)
+   - `POST /v1/chat/stream` (post-MVP, define now for future)
+   - `POST /v1/feedback`
+   - `GET /v1/me`
+   - `GET /v1/flags`
+   - `GET /v1/health`
+
+2. **Frontend monorepo scaffolding** with:
+   - `apps/precedent-search/` — main application
+   - `packages/ui/` — shared UI components
+   - `packages/api-client/` — typed API client
+   - `packages/auth/` — Kinde integration
+   - `packages/shared/` — shared types and utilities
+
+3. **MSW mock handlers** implementing all scenarios from Section 10.2.1
+
+4. **Minimal wireframes** for:
+   - Combined search + chat layout
+   - Empty state (no results, no conversations)
+   - Error states (auth, network, rate limit)
+   - Workspace connect flow
+   - Mobile responsive views
+
+5. **Sample JSON files** (sanitized):
+   - Discovery Engine search response (1-2 results)
+   - Empty results response
+   - Error response examples (AUTH_*, RATE_LIMITED, INTERNAL_ERROR)
 
 ---
 
@@ -945,24 +1304,26 @@ npm run test -- --filter=search
 
 ---
 
-### 17.4 Phase 4: Chat Feature
+### 17.4 Phase 4: Chat Feature (Non-Streaming MVP)
 
-**Goal:** Question-answering interface with citations
+**Goal:** Question-answering interface with citations using non-streaming `/v1/chat` endpoint
 
 **Prerequisites:** Phase 3 complete
+
+**Note:** SSE streaming (`/v1/chat/stream`) is deferred to post-MVP. MVP uses the synchronous `/v1/chat` endpoint.
 
 **Tasks (in order):**
 - [ ] Create `ChatContainer` component
 - [ ] Create `ChatMessage` component (user/assistant variants)
 - [ ] Create `ChatInput` component with submit handling
-- [ ] Implement SSE streaming display with progressive tokens
-- [ ] Create `CitationsPanel` component
+- [ ] Implement loading state with "Generating answer..." indicator
+- [ ] Create `CitationsPanel` component (see Section 5.3.1 for rendering rules)
 - [ ] Create `CitationCard` component
 - [ ] Add conversation state management (in-memory)
 - [ ] Implement "Regenerate" button functionality
 - [ ] Add copy-to-clipboard for answers
 - [ ] Create markdown export functionality
-- [ ] Handle mid-stream errors gracefully
+- [ ] Handle API errors gracefully (show error with retry option)
 
 **Key Files to Create:**
 ```
@@ -979,21 +1340,20 @@ apps/precedent-search/src/
 │       ├── CitationCard.tsx
 │       └── index.ts
 └── hooks/
-    ├── useChat.ts
-    └── useSSE.ts
+    └── useChat.ts
 ```
 
 **Exit Criteria:**
 - [ ] User can ask questions and see answers
-- [ ] Streaming responses display token-by-token
-- [ ] Citations appear alongside answers
+- [ ] Loading state shows "Generating answer..." during API call
+- [ ] Citations appear in sidebar after response received (deduplicated, ordered per Section 5.3.1)
 - [ ] "Regenerate" re-fetches the last answer
 - [ ] Copy button works for answer text
-- [ ] Mid-stream errors show partial answer with warning
+- [ ] API errors show user-friendly message with retry option
 
-**Requirement Coverage:** FR-CHAT-01 through FR-CHAT-06, FR-CHAT-STREAM-01 through FR-CHAT-STREAM-04
+**Requirement Coverage:** FR-CHAT-01 through FR-CHAT-06
 
-**PR Boundary:** Single PR titled `feat: chat UI with SSE streaming and citations`
+**PR Boundary:** Single PR titled `feat: chat UI with citations (non-streaming)`
 
 **Verification Commands:**
 ```bash
@@ -1001,6 +1361,8 @@ npm run build && npm run lint && npm run typecheck
 npm run test -- --filter=chat
 # E2E: npm run e2e -- --grep="chat"
 ```
+
+**Post-MVP Enhancement:** Add SSE streaming support when `STREAMING_ENABLED` flag is true. See Section 6.2.4 for streaming implementation notes.
 
 ---
 
@@ -1615,11 +1977,14 @@ export interface FeedbackButtonsProps {
 | `VITE_KINDE_LOGOUT_URI` | Post-logout redirect URL | Yes | - | `https://vnlaw.app` |
 | `VITE_API_BASE_URL` | Cloud Run BFF base URL | Yes | - | `https://api.vnlaw.app` |
 | `VITE_ALLOWED_DOMAIN` | Allowed email domain | Yes | - | `vnlaw.com.vn` |
+| `VITE_DEMO_MODE` | Enable Demo Mode with MSW mocks | No | `false` | `true` |
 | `VITE_SESSION_STORAGE_KEY` | Key for session ID storage | No | `vnlaw_session_id` | - |
 | `VITE_FEATURE_FLAGS_URL` | Remote feature flags endpoint | No | - | `https://api.vnlaw.app/v1/flags` |
 | `VITE_SENTRY_DSN` | Sentry error tracking DSN | No | - | `https://...@sentry.io/...` |
 | `VITE_GA_TRACKING_ID` | Google Analytics ID | No | - | `G-XXXXXXXXXX` |
 | `VITE_ENABLE_DEV_TOOLS` | Enable React DevTools in prod | No | `false` | `true` |
+
+**Demo Mode Note:** When `VITE_DEMO_MODE=true`, the app uses MSW to intercept all API calls. A "Demo Mode" banner is displayed in the header. See Section 10.2.1 for mock requirements.
 
 ### 20.2 Environment Files
 
@@ -1631,6 +1996,7 @@ VITE_KINDE_REDIRECT_URI=
 VITE_KINDE_LOGOUT_URI=
 VITE_API_BASE_URL=
 VITE_ALLOWED_DOMAIN=vnlaw.com.vn
+VITE_DEMO_MODE=false
 
 # .env.local (local development - not committed)
 VITE_KINDE_DOMAIN=vnlaw-dev.kinde.com
@@ -1639,6 +2005,16 @@ VITE_KINDE_REDIRECT_URI=http://localhost:5173/callback
 VITE_KINDE_LOGOUT_URI=http://localhost:5173
 VITE_API_BASE_URL=http://localhost:8080
 VITE_ALLOWED_DOMAIN=vnlaw.com.vn
+VITE_DEMO_MODE=true  # Enable Demo Mode for local development without backend
+
+# .env.demo (standalone frontend development - committed)
+VITE_KINDE_DOMAIN=vnlaw-dev.kinde.com
+VITE_KINDE_CLIENT_ID=dev_client_id
+VITE_KINDE_REDIRECT_URI=http://localhost:5173/callback
+VITE_KINDE_LOGOUT_URI=http://localhost:5173
+VITE_API_BASE_URL=http://localhost:5173  # Not used in demo mode
+VITE_ALLOWED_DOMAIN=vnlaw.com.vn
+VITE_DEMO_MODE=true
 
 # .env.staging (Netlify staging environment)
 VITE_KINDE_DOMAIN=vnlaw-staging.kinde.com
@@ -1749,4 +2125,16 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
 
 ---
 
-*End of SRS v1.2.0*
+---
+
+## Revision History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0.0 | 2025-12-20 | Initial draft |
+| 1.1.0 | 2025-12-21 | Added implementation phases |
+| 1.2.0 | 2025-12-22 | Added TypeScript interfaces, environment config |
+| 1.3.0 | 2025-12-22 | AI-Agent ready optimizations |
+| 1.4.0 | 2025-12-23 | Contract governance, Demo Mode, non-streaming MVP, security clarifications |
+
+*End of SRS v1.4.0*
