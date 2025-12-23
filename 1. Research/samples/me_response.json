@@ -1,0 +1,42 @@
+{
+  "_description": "Sample responses for GET /v1/me endpoint",
+
+  "connected": {
+    "email": "vu.nq@vnlaw.com.vn",
+    "name": "Nguyen Quoc Vu",
+    "picture": "https://lh3.googleusercontent.com/a/example",
+    "workspace": {
+      "connected": true,
+      "connectedEmail": "vu.nq@vnlaw.com.vn",
+      "scopes": ["cloud_search"],
+      "connectUrl": null
+    }
+  },
+
+  "disconnected": {
+    "email": "user@vnlaw.com.vn",
+    "name": "VNLaw User",
+    "picture": null,
+    "workspace": {
+      "connected": false,
+      "connectedEmail": null,
+      "scopes": [],
+      "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=https://vnlaw.app/settings?workspace_connected=1"
+    }
+  },
+
+  "demo_mode": {
+    "email": "demo@vnlaw.com.vn",
+    "name": "Demo User",
+    "picture": null,
+    "workspace": {
+      "connected": false,
+      "connectedEmail": null,
+      "scopes": [],
+      "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=https://vnlaw.app/settings?workspace_connected=1"
+    },
+    "_meta": {
+      "isDemoMode": true
+    }
+  }
+}

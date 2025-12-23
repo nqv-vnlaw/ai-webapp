@@ -1,0 +1,65 @@
+{
+  "requestId": "3c95efd4-6295-6e4d-0gcg-0dfg934782g0",
+  "query": "force majeure clause interpretation",
+  "scope": "both",
+  "status": "partial",
+  "answer": "Force majeure clauses in Vietnamese contracts typically require the affected party to demonstrate that the event was unforeseeable, unavoidable, and beyond their control. The Civil Code 2015 provides guidance on force majeure under Article 156.",
+  "results": [
+    {
+      "title": "Force Majeure Analysis - COVID-19 Impact on Commercial Contracts",
+      "snippet": "Comprehensive analysis of force majeure provisions in the context of pandemic-related contract disruptions under Vietnamese law.",
+      "url": "https://drive.google.com/file/d/1234567890/view",
+      "source": "precedent",
+      "metadata": {
+        "documentType": "internal",
+        "date": "2020-05-15",
+        "confidentiality": "internal",
+        "language": "en"
+      }
+    },
+    {
+      "title": "Civil Code 2015 - Article 156 Commentary",
+      "snippet": "Legal commentary on the definition and application of force majeure events under the Vietnamese Civil Code 2015.",
+      "url": "https://drive.google.com/file/d/0987654321/view",
+      "source": "precedent",
+      "metadata": {
+        "documentType": "internal",
+        "date": "2016-01-01",
+        "confidentiality": "public",
+        "language": "vi"
+      }
+    }
+  ],
+  "nextCursor": null,
+  "datastoreStatus": {
+    "precedent": {
+      "status": "success",
+      "resultCount": 15,
+      "error": null
+    },
+    "infobank": {
+      "status": "error",
+      "resultCount": 0,
+      "error": "DATASTORE_TIMEOUT: Infobank datastore did not respond within 30 seconds"
+    },
+    "workspace": {
+      "status": "success",
+      "resultCount": 0,
+      "error": null
+    }
+  },
+  "warnings": [
+    "Infobank datastore was unavailable. Results shown are from precedent datastore only."
+  ],
+  "auth": {
+    "needsGoogleConnect": false,
+    "connectUrl": null
+  },
+  "_meta": {
+    "durationMs": 32500,
+    "totalResults": 15,
+    "displayedResults": 2,
+    "source": "Discovery Engine",
+    "performanceCategory": "slow"
+  }
+}

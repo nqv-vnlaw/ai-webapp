@@ -1,0 +1,40 @@
+{
+  "_description": "Sample responses for GET /v1/flags endpoint",
+
+  "mvp": {
+    "flags": {
+      "WORKSPACE_SEARCH_ENABLED": false,
+      "CHAT_HISTORY_ENABLED": false,
+      "STREAMING_ENABLED": false,
+      "FEEDBACK_ENABLED": true,
+      "EXPORT_ENABLED": true,
+      "INFOBANK_SEARCH_ENABLED": false
+    }
+  },
+
+  "post_mvp": {
+    "flags": {
+      "WORKSPACE_SEARCH_ENABLED": true,
+      "CHAT_HISTORY_ENABLED": true,
+      "STREAMING_ENABLED": true,
+      "FEEDBACK_ENABLED": true,
+      "EXPORT_ENABLED": true,
+      "INFOBANK_SEARCH_ENABLED": true
+    }
+  },
+
+  "demo_mode": {
+    "flags": {
+      "WORKSPACE_SEARCH_ENABLED": false,
+      "CHAT_HISTORY_ENABLED": false,
+      "STREAMING_ENABLED": false,
+      "FEEDBACK_ENABLED": true,
+      "EXPORT_ENABLED": true,
+      "INFOBANK_SEARCH_ENABLED": false
+    },
+    "_meta": {
+      "isDemoMode": true,
+      "source": "msw_mock"
+    }
+  }
+}
