@@ -33,7 +33,7 @@
       "requestId": "err-403-i9j0k1l2",
       "details": {
         "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=https://vnlaw.app/settings?workspace_connected=1",
-        "requiredScopes": ["https://www.googleapis.com/auth/cloud_search.query"]
+        "requiredScopes": ["cloud_search"]
       },
       "retryable": false,
       "retryAfterSeconds": null

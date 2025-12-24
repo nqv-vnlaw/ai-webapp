@@ -1,0 +1,803 @@
+openapi: 3.1.0
+info:
+  title: VNlaw Web Apps BFF API
+  description: |
+    Backend-for-Frontend API for VNlaw Web Apps.
+
+    This API serves the Precedent Search Bot web application and future VNlaw web apps.
+    All endpoints except `/v1/health` require Kinde JWT authentication.
+
+    **Contract Governance:** This file is the single source of truth for the API contract.
+    See SRS Section 6.0 for governance rules.
+  version: 1.0.0
+  contact:
+    name: VNlaw IT
+    email: it@vnlaw.com.vn
+
+servers:
+  - url: https://api.vnlaw.app
+    description: Production
+  - url: https://api-staging.vnlaw.app
+    description: Staging
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Search
+    description: Legal document search operations
+  - name: Chat
+    description: Question-answering with citations
+  - name: User
+    description: User profile and settings
+  - name: System
+    description: Health checks and feature flags
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/search:
+    post:
+      operationId: search
+      summary: Search legal documents
+      description: |
+        Search across legal document datastores (precedent, infobank, workspace).
+        MVP supports only `precedent` scope.
+      tags:
+        - Search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '207':
+          description: Partial success - some datastores failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before retrying
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/chat:
+    post:
+      operationId: chat
+      summary: Ask a question and get an answer with citations
+      description: |
+        Submit a question to get an AI-generated answer with citations from legal documents.
+        For multi-turn conversations, include the full message history in the `messages` array.
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Answer generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Request timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/feedback:
+    post:
+      operationId: submitFeedback
+      summary: Submit feedback on an answer
+      description: Submit thumbs up/down feedback with optional comment on a chat answer.
+      tags:
+        - Chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Feedback received
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Get current user profile
+      description: Returns current user information including Google Workspace connection status.
+      tags:
+        - User
+      responses:
+        '200':
+          description: User profile retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/flags:
+    get:
+      operationId: getFlags
+      summary: Get feature flags
+      description: Returns feature flags for the current user/environment.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Feature flags retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagsResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns backend health status. No authentication required.
+      tags:
+        - System
+      security: []  # No auth required
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Kinde access token
+
+  schemas:
+    # ============ Enums ============
+    Scope:
+      type: string
+      enum:
+        - precedent
+        - infobank
+        - both
+        - workspace
+      description: Search scope. MVP supports only `precedent`.
+
+    Source:
+      type: string
+      enum:
+        - precedent
+        - infobank
+        - workspace
+      description: Document source datastore.
+
+    DocumentType:
+      type: string
+      enum:
+        - judgment
+        - decree
+        - circular
+        - internal
+        - email
+        - doc
+
+    Jurisdiction:
+      type: string
+      enum:
+        - civil
+        - criminal
+        - administrative
+        - labor
+
+    Language:
+      type: string
+      enum:
+        - vi
+        - en
+
+    Confidentiality:
+      type: string
+      enum:
+        - internal
+        - public
+
+    ErrorCode:
+      type: string
+      enum:
+        - AUTH_INVALID_TOKEN
+        - AUTH_DOMAIN_REJECTED
+        - AUTH_GOOGLE_DISCONNECTED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_ERROR
+        - INVALID_REQUEST
+        - QUERY_TOO_LONG
+        - RATE_LIMITED
+        - SEARCH_TIMEOUT
+        - UPSTREAM_ERROR
+        - SERVICE_UNAVAILABLE
+        - DATASTORE_UNAVAILABLE
+        - INTERNAL_ERROR
+      description: Canonical error codes. See SRS Section 6.3.
+
+    # ============ Search Types ============
+    SearchRequest:
+      type: object
+      required:
+        - query
+        - scope
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Search query text
+        scope:
+          $ref: '#/components/schemas/Scope'
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+          description: Number of results per page
+        cursor:
+          type: string
+          nullable: true
+          description: Opaque pagination cursor from previous response
+
+    ResultMetadata:
+      type: object
+      properties:
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
+        date:
+          type: string
+          format: date
+          description: Document date (YYYY-MM-DD)
+        court:
+          type: string
+          description: Court name (for precedent documents)
+        caseNumber:
+          type: string
+          description: Case identifier
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        parties:
+          type: array
+          items:
+            type: string
+          description: Party names
+        judge:
+          type: string
+          description: Judge name
+        lastModified:
+          type: string
+          format: date-time
+          description: Last modification timestamp (ISO-8601)
+        confidentiality:
+          $ref: '#/components/schemas/Confidentiality'
+        language:
+          $ref: '#/components/schemas/Language'
+
+    SearchResult:
+      type: object
+      required:
+        - title
+        - snippet
+        - url
+        - source
+      properties:
+        title:
+          type: string
+          description: Document title
+        snippet:
+          type: string
+          maxLength: 500
+          description: Relevant excerpt
+        url:
+          type: string
+          format: uri
+          description: Document URL
+        source:
+          $ref: '#/components/schemas/Source'
+        metadata:
+          $ref: '#/components/schemas/ResultMetadata'
+
+    DatastoreStatus:
+      type: object
+      required:
+        - status
+        - resultCount
+      properties:
+        status:
+          type: string
+          enum:
+            - success
+            - error
+        resultCount:
+          type: integer
+          minimum: 0
+          description: Total matches in datastore (may be approximate)
+        error:
+          type: string
+          nullable: true
+          description: Error message if status is error
+
+    AuthStatus:
+      type: object
+      required:
+        - needsGoogleConnect
+      properties:
+        needsGoogleConnect:
+          type: boolean
+          description: True if user should connect Google Workspace
+        connectUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: OAuth URL to connect Google Workspace
+
+    SearchResponse:
+      type: object
+      required:
+        - requestId
+        - query
+        - scope
+        - status
+        - results
+        - datastoreStatus
+        - auth
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        query:
+          type: string
+          description: Original query
+        scope:
+          $ref: '#/components/schemas/Scope'
+        status:
+          type: string
+          enum:
+            - success
+            - partial
+          description: Overall status. "partial" means some datastores failed.
+        answer:
+          type: string
+          nullable: true
+          description: AI-generated answer summary (optional)
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor for next page (null if no more results)
+        datastoreStatus:
+          type: object
+          required:
+            - precedent
+            - infobank
+            - workspace
+          properties:
+            precedent:
+              $ref: '#/components/schemas/DatastoreStatus'
+            infobank:
+              $ref: '#/components/schemas/DatastoreStatus'
+            workspace:
+              $ref: '#/components/schemas/DatastoreStatus'
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Warning messages for partial failures
+        auth:
+          $ref: '#/components/schemas/AuthStatus'
+
+    # ============ Chat Types ============
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          description: Message sender role
+        content:
+          type: string
+          description: Message content
+
+    ChatRequest:
+      type: object
+      required:
+        - message
+        - scope
+      properties:
+        conversationId:
+          type: string
+          nullable: true
+          description: Existing conversation ID (null for new conversation)
+        message:
+          type: string
+          minLength: 1
+          description: Current user message
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          description: |
+            Full conversation history for multi-turn context.
+            Frontend sends all previous messages. Backend uses this for context.
+            If omitted, treated as new conversation.
+        scope:
+          $ref: '#/components/schemas/Scope'
+        regenerate:
+          type: boolean
+          default: false
+          description: If true, regenerate the last assistant response
+
+    Citation:
+      type: object
+      required:
+        - title
+        - url
+        - source
+      properties:
+        title:
+          type: string
+          description: Document title
+        url:
+          type: string
+          format: uri
+          description: Document URL
+        snippet:
+          type: string
+          nullable: true
+          description: Relevant excerpt
+        source:
+          $ref: '#/components/schemas/Source'
+
+    ChatResponse:
+      type: object
+      required:
+        - requestId
+        - conversationId
+        - messageId
+        - answer
+        - citations
+        - auth
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        conversationId:
+          type: string
+          description: Conversation identifier
+        messageId:
+          type: string
+          description: Unique message ID (use for feedback submission)
+        answer:
+          type: string
+          description: AI-generated answer
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        auth:
+          $ref: '#/components/schemas/AuthStatus'
+        contextLimitWarning:
+          type: boolean
+          default: false
+          description: |
+            True if conversation history was truncated due to context window limits.
+            Frontend should display a warning to user.
+
+    # ============ Feedback Types ============
+    FeedbackRequest:
+      type: object
+      required:
+        - messageId
+        - conversationId
+        - type
+      properties:
+        messageId:
+          type: string
+          description: Message ID from ChatResponse
+        conversationId:
+          type: string
+          description: Conversation ID
+        type:
+          type: string
+          enum:
+            - up
+            - down
+          description: Feedback type (thumbs up/down)
+        comment:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: Optional comment
+
+    FeedbackResponse:
+      type: object
+      required:
+        - requestId
+        - status
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - received
+
+    # ============ User Types ============
+    WorkspaceStatus:
+      type: object
+      required:
+        - connected
+        - scopes
+      properties:
+        connected:
+          type: boolean
+          description: Whether Google Workspace is connected
+        connectedEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Connected Google account email
+        scopes:
+          type: array
+          items:
+            type: string
+          description: Granted scope keys (e.g., "cloud_search")
+        connectUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to connect Google Workspace
+
+    UserProfile:
+      type: object
+      required:
+        - email
+        - workspace
+      properties:
+        email:
+          type: string
+          format: email
+          description: User email (must be @vnlaw.com.vn)
+        name:
+          type: string
+          nullable: true
+          description: User display name
+        picture:
+          type: string
+          format: uri
+          nullable: true
+          description: Profile picture URL
+        workspace:
+          $ref: '#/components/schemas/WorkspaceStatus'
+
+    # ============ System Types ============
+    FeatureFlags:
+      type: object
+      required:
+        - WORKSPACE_SEARCH_ENABLED
+        - CHAT_HISTORY_ENABLED
+        - STREAMING_ENABLED
+        - FEEDBACK_ENABLED
+        - EXPORT_ENABLED
+        - INFOBANK_SEARCH_ENABLED
+      properties:
+        WORKSPACE_SEARCH_ENABLED:
+          type: boolean
+          default: false
+        CHAT_HISTORY_ENABLED:
+          type: boolean
+          default: false
+        STREAMING_ENABLED:
+          type: boolean
+          default: false
+        FEEDBACK_ENABLED:
+          type: boolean
+          default: true
+        EXPORT_ENABLED:
+          type: boolean
+          default: true
+        INFOBANK_SEARCH_ENABLED:
+          type: boolean
+          default: false
+
+    FlagsResponse:
+      type: object
+      required:
+        - flags
+      properties:
+        flags:
+          $ref: '#/components/schemas/FeatureFlags'
+
+    DependencyStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - up
+            - down
+        latencyMs:
+          type: integer
+          description: Latency in milliseconds
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - timestamp
+        - dependencies
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+        version:
+          type: string
+          description: API version
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DependencyStatus'
+
+    # ============ Error Types ============
+    APIError:
+      type: object
+      required:
+        - code
+        - message
+        - requestId
+        - retryable
+      properties:
+        code:
+          $ref: '#/components/schemas/ErrorCode'
+        message:
+          type: string
+          description: Human-readable error message
+        requestId:
+          type: string
+          format: uuid
+          description: Request ID for support reference
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error details (e.g., field errors, connectUrl)
+        retryable:
+          type: boolean
+          description: Whether the request can be retried
+        retryAfterSeconds:
+          type: integer
+          nullable: true
+          description: Seconds to wait before retrying (if retryable)
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/APIError'

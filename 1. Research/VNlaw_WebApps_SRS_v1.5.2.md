@@ -1,10 +1,10 @@
 # VNlaw Web Apps Frontend Platform — Software Requirements Specification (SRS)
 **Document ID:** VNLAW-WEBAPPS-SRS
-**Version:** 1.4.0 (AI-Agent Ready)
+**Version:** 1.5.2 (AI-Agent Ready)
 **Status:** Draft (Build-ready baseline)
 **Primary application (App #1):** Precedent Search Bot (Web)
 **Repository:** Separate frontend repository (monorepo) e.g., `vnlaw-webapps`
-**Last updated:** 2025-12-23
+**Last updated:** 2025-12-24
 **Format:** Optimized for AI-assisted development with phased implementation  
 
 ---
@@ -26,11 +26,11 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 ### Authoritative Contracts
 | Artifact | Status | Location |
 |----------|--------|----------|
-| OpenAPI Spec (`openapi.yaml`) | 🔴 **BLOCKING** | Must be created before Phase 2 |
+| OpenAPI Spec (`openapi.yaml`) | ✅ Ready | `1. Research/openapi.yaml` |
 | Wireframes/Mockups | 🟡 Recommended | Figma link TBD |
 | This SRS | ✅ Ready | Current document |
 
-**⚠️ OpenAPI Governance Rule:** Agents MUST NOT implement frontend API integration until `openapi.yaml` exists and matches Section 6.2 exactly. See Section 6.0 for contract governance rules.
+**⚠️ OpenAPI Governance Rule:** Agents MUST use `openapi.yaml` as the single source of truth for API contracts. Any discrepancies between this SRS and the OpenAPI spec should be resolved by updating BOTH documents. See Section 6.0 for contract governance rules.
 
 ### MVP Scope Matrix
 | Feature | MVP | Post-MVP | Feature Flag |
@@ -50,12 +50,12 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 ### Open Questions (Resolve Before Phase 2)
 1. ~~OpenAPI spec location~~ → Must be created
 2. ~~Wireframes/mockups~~ → Minimal set required for error states, empty states
-3. Backend readiness: Confirm `/v1/search`, `/v1/chat/stream`, `/v1/feedback` endpoints are deployed
+3. Backend readiness: Confirm `/v1/search`, `/v1/chat`, `/v1/feedback` endpoints are deployed
 
 ### Critical Implementation Notes
 - **SSE Streaming (Post-MVP):** Streaming is deferred to post-MVP. When implemented, cannot use `EventSource` (no Authorization header support). Must use `fetch()` + `ReadableStream`. See Section 6.2.4.
 - **Demo Mode:** Frontend MUST work fully with MSW mocks before backend exists. Enable via `VITE_DEMO_MODE=true`. See Section 10.2.
-- **Kinde Callback:** The `/callback` route is handled automatically by Kinde SDK; no explicit route component needed.
+- **Kinde Callback:** Provide a `/callback` route that renders a minimal "Signing you in..." page. The Kinde SDK processes the OAuth callback on this route. Do NOT leave `/callback` unhandled or it will render a 404.
 - **Token Storage:** Kinde SDK stores tokens in memory; use silent refresh for session persistence across reloads. See Section 8.1.
 
 ---
@@ -133,8 +133,8 @@ This SRS specifies requirements for:
 
 **Configuration**
 - Build command: `npm run build`
-- Publish directory: `dist`
-- Node version: current LTS
+- Publish directory: `apps/precedent-search/dist` (monorepo path)
+- Node version: current LTS (20.x)
 - Environment variables: Kinde domain, API URLs, feature flags
 
 **Alternative deployment platforms**
@@ -175,6 +175,45 @@ This SRS specifies requirements for:
 **Role**
 - Cloud Run: the authoritative API surface for web apps; validates Kinde JWT; orchestrates search/chat; performs token lookups/exchange.
 - Cloud Functions: existing services (e.g., OAuth token broker, proxies) and supporting endpoints.
+
+**CORS Requirements (Backend):**
+
+The BFF MUST implement dynamic CORS to allow requests from Netlify-hosted frontend:
+
+**Allowed Origins (explicit allowlist):**
+- `https://vnlaw.app` (production)
+- `https://staging.vnlaw.app` (staging)
+- `http://localhost:5173` (local development)
+- `http://localhost:3000` (alternative local)
+
+**Netlify Preview Handling (dynamic):**
+```python
+# Backend validates Origin header dynamically
+ALLOWED_ORIGINS = [
+    "https://vnlaw.app",
+    "https://staging.vnlaw.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
+def get_cors_origin(request):
+    origin = request.headers.get("Origin")
+    if origin in ALLOWED_ORIGINS:
+        return origin
+    # Allow Netlify preview deployments
+    if origin and origin.endswith(".netlify.app"):
+        return origin
+    return None  # Reject unknown origins
+```
+
+**Required Headers:**
+- `Access-Control-Allow-Origin`: Echo validated origin (NOT wildcard)
+- `Access-Control-Allow-Headers`: `Authorization`, `X-Session-Id`, `X-Request-Id`, `Content-Type`
+- `Access-Control-Allow-Methods`: `GET`, `POST`, `OPTIONS`
+- `Access-Control-Max-Age`: `86400` (preflight cache)
+- `Vary`: `Origin` (required when origin is dynamic)
+
+Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight; backend MUST handle `OPTIONS` requests.
 
 ### 3.4 Firestore (MVP persistence)
 **Why selected**
@@ -231,6 +270,21 @@ Netlify serves UI; **all business logic** and sensitive operations are in GCP (C
 - Kinde is the source of truth for "who is logged in".
 - Google OAuth tokens are required only for Workspace-connected features.
 - If tokens are missing/expired/insufficient scope, backend returns `AUTH_GOOGLE_DISCONNECTED` with a `connectUrl`.
+
+### 4.3.1 Auth/Connect Behavior Pattern (Single Source of Truth)
+
+When a request requires Google tokens and the user is disconnected, the backend follows ONE pattern:
+
+**Pattern: Error Response with `AUTH_GOOGLE_DISCONNECTED`**
+
+If Workspace scope is requested and Google tokens are unavailable:
+1. Backend returns **HTTP 403** with error code `AUTH_GOOGLE_DISCONNECTED`
+2. Error `details` includes `connectUrl` for OAuth flow
+3. Frontend shows "Connect Google Workspace" prompt with the `connectUrl`
+
+**The `auth` object in success responses** (`auth.needsGoogleConnect`, `auth.connectUrl`) is for **informational/proactive UI hints only** — not for blocking access. It allows the frontend to show a "Connect Workspace" option even when the current request succeeded (e.g., searching `precedent` scope while Workspace is disconnected).
+
+**Rule:** Frontend MUST NOT use `auth.needsGoogleConnect` to block functionality. Only the `AUTH_GOOGLE_DISCONNECTED` error response triggers the connect flow.
 
 ### 4.4 Greenfield BFF Development (Parallel Development Safety)
 
@@ -326,6 +380,23 @@ The API contract is the foundation for parallel frontend/backend development. Th
 | **Version Bumping** | Any contract change requires: (1) update `openapi.yaml`, (2) bump spec version, (3) update both frontend mocks and backend |
 | **Blocking Status** | Frontend API integration is BLOCKED until `openapi.yaml` exists and matches Section 6.2 |
 
+#### 6.0.1.1 Toolchain Specification
+
+**TypeScript Type Generation:**
+- Use `openapi-typescript` to generate TypeScript types from `openapi.yaml`
+- Output to `packages/shared/src/types/generated/api.ts`
+- Command: `npx openapi-typescript openapi.yaml -o packages/shared/src/types/generated/api.ts`
+
+**Schema Validation:**
+- Use Zod for runtime validation of API responses
+- Manually maintain Zod schemas in `packages/shared/src/schemas/` that align with OpenAPI
+- Use `.passthrough()` on Zod schemas to allow `_meta` and future fields
+
+**MSW Mock Validation:**
+- MSW handlers in `apps/precedent-search/src/mocks/handlers.ts`
+- Mock responses MUST match the Zod schemas
+- Use shared sample JSON files for consistency
+
 #### 6.0.2 Canonical Error Contract
 
 All non-2xx responses MUST use this schema (see Section 6.3 for full error codes):
@@ -358,7 +429,9 @@ All non-2xx responses MUST use this schema (see Section 6.3 for full error codes
 | 502 | `UPSTREAM_ERROR` | Dependency failure |
 | 503 | `SERVICE_UNAVAILABLE`, `DATASTORE_UNAVAILABLE` | Temporary unavailable |
 | 504 | `SEARCH_TIMEOUT` | Request timeout |
-| 207 | (success with `status: "partial"`) | Partial success, check `datastoreStatus` |
+| 200/207 | (success with `status: "partial"`) | Partial success, check `datastoreStatus` |
+
+**Partial Success Clarification:** HTTP 200 or 207 with `SearchResponse.status = "partial"` is a **success response**, not an error response. The response body follows `SearchResponse` schema, not `APIErrorResponse`. Frontend should display available results with a warning banner. There is no `SEARCH_PARTIAL_FAILURE` error code.
 
 #### 6.0.4 Sample JSON Files (Recommended)
 
@@ -388,9 +461,50 @@ These samples reduce ambiguity and prevent field name mismatches.
 **Versioning:** All endpoints are under `/v1`.
 
 #### 6.2.1 Headers
-- `Authorization: Bearer <kinde_access_token>` (required)
-- `X-Session-Id: <client-generated>` (required)
-- `X-Request-Id: <uuid>` (optional, if client provides; backend also generates)
+
+**Required Headers (all endpoints except `/v1/health`):**
+- `Authorization: Bearer <kinde_access_token>` — Required for all authenticated endpoints
+- `X-Session-Id: <client-generated>` — Required; persisted in sessionStorage per tab
+- `X-Request-Id: <uuid>` — Optional; if omitted, backend generates one
+
+**Exception:** `/v1/health` is a public endpoint and does NOT require `Authorization` or `X-Session-Id`.
+
+#### 6.2.1.1 Common Response Fields
+
+**Request Identifiers:**
+| Field | Format | Description |
+|-------|--------|-------------|
+| `requestId` | UUID v4 | Unique identifier generated by backend for each API call. Used for tracing and support. |
+| `conversationId` | `conv_<random>` | Identifier for a chat conversation. Persists across messages in a conversation. |
+| `messageId` | `msg_<random>` | Unique identifier for an assistant message. Use for feedback submission. |
+
+**Important:** `requestId` MUST be a valid UUID v4 string and MUST be unique per API request. Frontend should display `requestId` for all errors to enable support investigations.
+
+**ID Clarification:**
+- `X-Request-Id` (header): Client-generated UUID, sent with request for client-side correlation
+- `requestId` (response): Backend-generated UUID, returned in all responses for server-side tracing
+- **Display to users:** Always show the backend `requestId` from response (not the client header)
+- **Logging:** Log both for full request tracing
+
+**Optional `_meta` Field:**
+
+API responses MAY include an optional `_meta` object with debugging/diagnostic information:
+```json
+{
+  "_meta": {
+    "durationMs": 1500,
+    "totalResults": 69,
+    "displayedResults": 5,
+    "source": "Discovery Engine",
+    "isDemoMode": false
+  }
+}
+```
+
+**Client Parsing Rules:**
+- Clients SHOULD use non-strict/passthrough parsing (e.g., Zod `.passthrough()`) to allow unknown fields
+- The `_meta` field is NOT part of the core contract and MAY be omitted
+- Contents of `_meta` MAY change without version bump
 
 #### 6.2.2 POST `/v1/search`
 Request:
@@ -444,21 +558,38 @@ Response (success):
 }
 ```
 
+**Field Notes:**
+- `datastoreStatus.resultCount`: Total matches in that datastore (may be approximate), not results returned in this page. Use for "X results found" display.
+
 #### 6.2.3 POST `/v1/chat`
 Request:
 ```json
 {
   "conversationId": "string|null",
   "message": "string",
+  "messages": [
+    {"role": "user", "content": "Previous question"},
+    {"role": "assistant", "content": "Previous answer"},
+    {"role": "user", "content": "Current question"}
+  ],
   "scope": "precedent|infobank|both|workspace",
   "regenerate": false
 }
 ```
+
+**Multi-turn Conversation Context:**
+- Frontend sends the **full conversation history** in `messages[]` on every request
+- Backend is stateless — it uses `messages[]` to understand context for follow-up questions
+- `conversationId` is for client-side grouping and feedback correlation, NOT backend state lookup
+- If `messages[]` is omitted, treated as a new single-turn conversation
+- The `message` field contains the current user message (also included as last item in `messages[]`)
+
 Response:
 ```json
 {
   "requestId": "string",
   "conversationId": "string",
+  "messageId": "string",
   "answer": "string",
   "citations": [
     {
@@ -471,55 +602,25 @@ Response:
   "auth": {
     "needsGoogleConnect": false,
     "connectUrl": null
-  }
+  },
+  "contextLimitWarning": false
 }
 ```
 
-#### 6.2.4 POST `/v1/chat/stream` (SSE, optional but recommended)
-- Request body is the same as `/v1/chat`
-- Response: `Content-Type: text/event-stream`
+**Response Notes:**
+- `messageId`: Unique identifier for this assistant response. Use this ID when submitting feedback via `/v1/feedback`.
+- `contextLimitWarning`: If `true`, the conversation history was **truncated** due to LLM context window limits. Frontend SHOULD display a warning: "Long conversation — some earlier context may have been trimmed."
 
-**⚠️ Implementation Note:** The browser's native `EventSource` API **cannot send custom headers** (including `Authorization`). The frontend **must use `fetch()` with `ReadableStream`** to consume SSE with auth headers. Recommended libraries:
-- `@microsoft/fetch-event-source` (full-featured)
-- `fetch-event-stream` (lightweight)
+#### 6.2.4 POST `/v1/chat/stream` — POST-MVP (Deferred)
 
-**Event Format (JSON per line):**
-Each SSE event follows the format: `event: <type>\ndata: <json>\n\n`
+**Status:** ❌ Not implemented for MVP. Streaming will be added post-MVP when frontend is stable.
 
-```
-event: start
-data: {"conversationId": "abc123", "messageId": "msg456"}
+**Hook for Future:**
+- Feature flag `STREAMING_ENABLED` controls availability
+- When implemented, will use SSE with `fetch()` + `ReadableStream` (not `EventSource`)
+- Detailed specification will be added to this section when work begins
 
-event: token
-data: {"content": "The court held that"}
-
-event: token
-data: {"content": " the plaintiff..."}
-
-event: citation
-data: {"title": "Case ABC v XYZ", "url": "...", "snippet": "...", "source": "precedent"}
-
-event: done
-data: {"requestId": "req789", "conversationId": "abc123"}
-
-event: error
-data: {"code": "SEARCH_TIMEOUT", "message": "...", "retryable": true}
-```
-
-**Events:**
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `start` | `{conversationId, messageId}` | Stream initialized |
-| `token` | `{content: string}` | Incremental text chunk |
-| `citation` | `Citation` object | Citation as discovered |
-| `done` | `{requestId, conversationId}` | Stream complete |
-| `error` | `APIError` object | Error (may be mid-stream) |
-
-Frontend requirements:
-- **FR-CHAT-STREAM-01** Display tokens progressively (append to message).
-- **FR-CHAT-STREAM-02** Render citations after `citation` events (accumulate in sidebar).
-- **FR-CHAT-STREAM-03** Handle mid-stream errors gracefully; show partial answer with warning.
-- **FR-CHAT-STREAM-04** Implement connection timeout (30s recommended) with retry.
+**MVP Approach:** Use synchronous `/v1/chat` endpoint with loading indicator.
 
 #### 6.2.5 POST `/v1/feedback`
 Request:
@@ -556,6 +657,11 @@ Response:
 }
 ```
 
+**Scope Format Convention:**
+- The `scopes` array uses **internal scope keys** (e.g., `"cloud_search"`) rather than full OAuth URIs
+- Error responses (e.g., `AUTH_GOOGLE_DISCONNECTED`) also use internal scope keys in `details.requiredScopes`
+- Mapping: `"cloud_search"` → `https://www.googleapis.com/auth/cloud_search.query`
+
 #### 6.2.7 GET `/v1/flags`
 Returns feature flags for the current user/environment.
 Response:
@@ -564,13 +670,15 @@ Response:
   "flags": {
     "WORKSPACE_SEARCH_ENABLED": false,
     "CHAT_HISTORY_ENABLED": false,
-    "STREAMING_ENABLED": true,
+    "STREAMING_ENABLED": false,
     "FEEDBACK_ENABLED": true,
-    "EXPORT_ENABLED": false,
+    "EXPORT_ENABLED": true,
     "INFOBANK_SEARCH_ENABLED": false
   }
 }
 ```
+
+**Note:** MVP defaults shown above. See Section 12 for full flag documentation.
 
 #### 6.2.8 GET `/v1/health`
 Returns backend health and dependency status (no sensitive details).
@@ -606,6 +714,14 @@ Response:
 | `metadata.date` | string | No | `YYYY-MM-DD` format |
 | `metadata.court` | string | No | Court name (for precedent) |
 | `metadata.caseNumber` | string | No | Case identifier |
+| `metadata.jurisdiction` | enum | No | `civil`\|`criminal`\|`administrative`\|`labor` |
+| `metadata.parties` | string[] | No | Party names |
+| `metadata.judge` | string | No | Judge name |
+| `metadata.lastModified` | string | No | ISO-8601 timestamp |
+| `metadata.confidentiality` | enum | No | `internal`\|`public` |
+| `metadata.language` | enum | No | `vi`\|`en` |
+
+**Note:** All `metadata.*` fields are optional. BFF includes them when available from Discovery Engine.
 
 **Adapter Responsibility:**
 - Field mapping from Discovery Engine format to canonical format is the **BFF's responsibility**
@@ -659,7 +775,6 @@ All endpoints return errors in the following format (see Section 6.0.2 for gover
 | `QUERY_TOO_LONG` | 400 | Query exceeds max length | No |
 | `RATE_LIMITED` | 429 | Too many requests; check `Retry-After` header | Yes (1x) |
 | `SEARCH_TIMEOUT` | 504 | Search operation timed out | Yes (2x) |
-| `SEARCH_PARTIAL_FAILURE` | 207/200 | Partial success; check `datastoreStatus` | No |
 | `UPSTREAM_ERROR` | 502 | Dependency (Discovery Engine, etc.) failed | Yes (2x) |
 | `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable | Yes (3x) |
 | `DATASTORE_UNAVAILABLE` | 503 | Specific datastore unavailable | Yes (3x) |
@@ -682,7 +797,7 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 }
 ```
 
-### 6.5 Error Code → UX Mapping
+### 6.4 Error Code → UX Mapping
 
 | Error Code | User Message | Recommended Action | Auto-Retry |
 |------------|--------------|-------------------|------------|
@@ -691,14 +806,18 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 | `AUTH_GOOGLE_DISCONNECTED` | "Connect your Google Workspace to search internal documents." | Show "Connect" button with `connectUrl` | No |
 | `RATE_LIMITED` | "Too many requests. Please wait a moment." | Show countdown timer using `Retry-After` | Yes (1x) |
 | `SEARCH_TIMEOUT` | "Search is taking longer than expected. Please try again." | Show "Retry" button | Yes (2x) |
-| `SEARCH_PARTIAL_FAILURE` | "Some results may be missing. Showing available results." | Show results with warning banner | No |
+| `UPSTREAM_ERROR` | "A required service is temporarily unavailable." | Show "Retry" button | Yes (2x) |
 | `SERVICE_UNAVAILABLE` | "Service temporarily unavailable. Retrying..." | Auto-retry with indicator | Yes (3x) |
+
 | `DATASTORE_UNAVAILABLE` | "Some data sources are temporarily unavailable." | Show partial results if available | Yes (3x) |
 | `INVALID_REQUEST` | "Invalid request. Please check your input." | Highlight invalid field | No |
+| `VALIDATION_ERROR` | "Invalid request. Please check your input." | Highlight invalid fields from `details.fields` | No |
 | `QUERY_TOO_LONG` | "Query is too long. Maximum 500 characters." | Show character count, truncate | No |
 | `INTERNAL_ERROR` | "Something went wrong. Please try again later." | Show "Retry" button, log `requestId` | Yes (1x) |
 
-### 6.4 Rate limiting headers
+**Partial Success UX (not an error):** When `SearchResponse.status === "partial"`, display: "Some results may be missing. Showing available results." Show results with warning banner. Check `datastoreStatus` for details on which datastores failed.
+
+### 6.5 Rate limiting headers
 All API responses include:
 - `X-RateLimit-Limit`
 - `X-RateLimit-Remaining`
@@ -765,10 +884,16 @@ During automatic retries:
 **FR-ERR-02 Retry UI:** Display “Retrying…” indicator during automatic retries.  
 **FR-ERR-03 Manual retry:** Provide manual retry after max retries exceeded.  
 
-Retry matrix:
-- 503: max 3 retries (1s, 2s, 4s)
-- 504: max 2 retries (2s, 4s)
-- 429: wait `Retry-After`, max 1 retry
+Retry matrix (by HTTP status or error code):
+| Status/Code | Max Retries | Backoff Schedule |
+|-------------|-------------|------------------|
+| 429 `RATE_LIMITED` | 1 | Wait `Retry-After` header |
+| 500 `INTERNAL_ERROR` | 1 | 2s |
+| 502 `UPSTREAM_ERROR` | 2 | 2s, 4s |
+| 503 `SERVICE_UNAVAILABLE` | 3 | 1s, 2s, 4s |
+| 504 `SEARCH_TIMEOUT` | 2 | 2s, 4s |
+
+**Retry Decision:** Use `error.retryable` field as authoritative; the table above provides default backoff when `retryAfterSeconds` is not provided.
 
 **Circuit breaker**
 - After 5 consecutive failures within 60s, open circuit for 30s.
@@ -821,6 +946,34 @@ form-action 'self';
 - Redact emails in logs (show only domain, e.g., `***@vnlaw.com.vn`)
 - Never log request/response bodies in production (see Section 7.5)
 
+#### 7.3.5 Markdown/HTML Rendering (XSS Prevention)
+
+Chat answers and search snippets may contain Markdown. To prevent XSS:
+- **MUST** sanitize all Markdown output before rendering (use DOMPurify or equivalent)
+- **MUST NOT** allow raw HTML in Markdown (disable `allowDangerousHtml`)
+- **MUST** escape any user-generated content before display
+
+#### 7.3.6 External Link Security
+
+Citations and document links open external URLs (Google Drive, etc.):
+- **MUST** use `target="_blank"` with `rel="noopener noreferrer"` for all external links
+- **SHOULD** validate URL host against expected domains (e.g., `drive.google.com`, `docs.google.com`)
+- **SHOULD** warn user if URL host is unexpected before navigation
+
+#### 7.3.7 Demo Mode Production Guard
+
+Demo Mode (`VITE_DEMO_MODE=true`) uses MSW to intercept all API calls. This is dangerous in production:
+- **MUST** fail build if `VITE_ENV=production` AND `VITE_DEMO_MODE=true`
+- Add CI check: `if [[ "$VITE_ENV" == "production" && "$VITE_DEMO_MODE" == "true" ]]; then exit 1; fi`
+- Demo Mode banner MUST be visible when active
+
+#### 7.3.8 Recent Searches Privacy
+
+Storing recent searches in localStorage can expose sensitive legal queries:
+- Store only **query preview** (first 50 chars) or **hash** of full query
+- Consider using **sessionStorage** instead of localStorage for higher privacy
+- Provide user option to disable search history
+
 ### 7.4 Accessibility
 - WCAG 2.1 AA target for core flows.
 - Full keyboard navigation for search, chat, citations, modals.
@@ -870,14 +1023,21 @@ Log structured events (PII-safe) for:
 | Search state | URL params + memory | Navigation | Enables shareable URLs |
 | Chat thread | Memory | Session | Optionally persist via backend |
 | Response cache | TanStack Query | Session | Stale-while-revalidate |
-| Recent searches | localStorage | Per user | Max 10 entries |
+| Recent searches | localStorage | Per user | Max 10 entries; store preview only (first 50 chars) |
 
 **Auth Clarification:** Access tokens are stored in memory by Kinde SDK. Session persistence across page reloads is achieved via Kinde's silent refresh mechanism (uses secure cookies internally). Do NOT store tokens in localStorage.
 
 ### 8.2 URL state (required)
-- Search query reflected in URL, e.g. `/search?q=...&scope=precedent`
+
+**MVP URL Pattern:** Since `/` is the canonical MVP page (combined search + chat), query parameters are on the root URL:
+- `/?q=<query>&scope=precedent` — search with query
+- `/?q=<query>&scope=precedent&cid=<conversationId>` — chat in context
+
+**Rules:**
+- Search query reflected in URL parameters
 - Back/forward navigation must work correctly
 - URLs are shareable internally (subject to auth)
+- Do NOT use `/search?q=...` for MVP — that route is post-MVP
 
 ### 8.3 Caching rules
 - Search responses: TTL 5 minutes; stale-while-revalidate 5 minutes.
@@ -903,7 +1063,7 @@ Log structured events (PII-safe) for:
 ## 10. Testing Requirements
 
 ### 10.1 Unit testing
-- Tooling: Vitest/Jest + Testing Library
+- Tooling: **Vitest** + Testing Library (Vitest integrates natively with Vite)
 - Coverage targets:
   - shared packages: 80%
   - app logic: 70%
@@ -972,33 +1132,66 @@ Breakpoints: mobile <640px, tablet 640–1024px, desktop >1024px.
 ---
 
 ## 12. Feature Flags
-Feature flags evaluated at app init (from config endpoint or build-time env).  
-Initial flags:
-- `WORKSPACE_SEARCH_ENABLED` (default false)
-- `CHAT_HISTORY_ENABLED` (default false)
-- `STREAMING_ENABLED` (default true)
-- `FEEDBACK_ENABLED` (default true)
-- `EXPORT_ENABLED` (default false)
+Feature flags evaluated at app init (from `/v1/flags` endpoint or build-time env).
 
-Disabled feature behavior:
-- Hide UI controls
-- If invoked, show friendly message (no broken state)
+**MVP Defaults:**
+| Flag | MVP Default | Post-MVP | Description |
+|------|-------------|----------|-------------|
+| `WORKSPACE_SEARCH_ENABLED` | `false` | `true` | Workspace scope in search |
+| `CHAT_HISTORY_ENABLED` | `false` | `true` | Persist conversations |
+| `STREAMING_ENABLED` | `false` | `true` | SSE streaming for chat |
+| `FEEDBACK_ENABLED` | `true` | `true` | Thumbs up/down on answers |
+| `EXPORT_ENABLED` | `true` | `true` | Markdown export |
+| `INFOBANK_SEARCH_ENABLED` | `false` | `true` | Infobank scope in search |
+
+**Important:** `STREAMING_ENABLED` is `false` for MVP because streaming is deferred to post-MVP. MVP uses the synchronous `/v1/chat` endpoint.
+
+**Disabled feature behavior:**
+- Hide UI controls entirely
+- If invoked programmatically, show friendly message (no broken state)
 
 ---
 
 ## 13. Deployment & Environments
 
 ### 13.1 Environments
-- Dev: local
-- Staging: Netlify preview + `staging.vnlaw.app`
-- Prod: `vnlaw.app`
 
-### 13.2 Netlify config expectations
-- Deploy previews for PRs
-- Branch deploy for staging (e.g., `main`→prod, `develop`→staging)
-- Environment variables per site/app
+| Environment | URL | Auth | Backend |
+|-------------|-----|------|---------|
+| Dev (local) | `http://localhost:5173` | Kinde (dev tenant) | Local or Demo Mode |
+| Preview (PR) | `*.netlify.app` | **Demo Mode only** | MSW mocks |
+| Staging | `staging.vnlaw.app` | Kinde (staging tenant) | `api-staging.vnlaw.app` |
+| Production | `vnlaw.app` | Kinde (prod tenant) | `api.vnlaw.app` |
 
-### 13.3 Cloudflare expectations
+### 13.2 Preview Auth Strategy (Option B — Staging URL)
+
+**Problem:** Kinde OAuth cannot authenticate arbitrary `*.netlify.app` URLs because callback URLs must be pre-registered. Adding dynamic preview URLs is impractical.
+
+**Solution:** Use Demo Mode for all Netlify deploy previews. Real authentication testing occurs only on the staging branch deploy (`staging.vnlaw.app`).
+
+| Deploy Type | URL Pattern | Auth Method | Notes |
+|-------------|-------------|-------------|-------|
+| PR preview | `deploy-preview-123--vnlaw-app.netlify.app` | Demo Mode | No Kinde; MSW mocks all API responses |
+| Staging branch | `staging.vnlaw.app` | Real Kinde | Pre-registered in Kinde staging tenant |
+| Production | `vnlaw.app` | Real Kinde | Pre-registered in Kinde prod tenant |
+
+**Kinde Callback URL Configuration:**
+- Staging tenant: `https://staging.vnlaw.app/callback`
+- Production tenant: `https://vnlaw.app/callback`
+- Dev tenant: `http://localhost:5173/callback`
+
+**Workflow:**
+1. **PR previews** — Developers/reviewers use Demo Mode; focus on UI/UX, not auth flows
+2. **Staging** — QA tests real auth and API integration on `staging.vnlaw.app`
+3. **Production** — Release after staging verification
+
+### 13.3 Netlify Config Expectations
+- **PR previews:** Auto-deploy with `VITE_DEMO_MODE=true` (no real auth)
+- **Branch deploy for staging:** `develop` branch → `staging.vnlaw.app` with real Kinde
+- **Production deploy:** `main` branch → `vnlaw.app` with real Kinde
+- Environment variables per deploy context (see Section 20.3)
+
+### 13.4 Cloudflare Expectations
 - DNS + SSL/TLS for `vnlaw.app` and `api.vnlaw.app`
 - WAF + rate limiting policies
 - Optional: Access policies for internal-only routes
@@ -1028,21 +1221,12 @@ MVP is accepted when:
 
 | Artifact | Status | Owner | Notes |
 |----------|--------|-------|-------|
-| `openapi.yaml` | 🔴 BLOCKING | TBD | Must match Section 6.2; see Section 6.0 for governance |
-| Sample JSON files | 🟡 Recommended | Backend | Discovery Engine responses (see Section 6.0.4) |
+| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; governs Section 6.2 |
+| Sample JSON files | ✅ Complete | IT | Located at `1. Research/samples/` |
 
 ### 16.2 Recommended Artifacts
 
-1. **OpenAPI spec (`openapi.yaml`)** for:
-   - `POST /v1/search`
-   - `POST /v1/chat` (non-streaming MVP)
-   - `POST /v1/chat/stream` (post-MVP, define now for future)
-   - `POST /v1/feedback`
-   - `GET /v1/me`
-   - `GET /v1/flags`
-   - `GET /v1/health`
-
-2. **Frontend monorepo scaffolding** with:
+1. **Frontend monorepo scaffolding** with:
    - `apps/precedent-search/` — main application
    - `packages/ui/` — shared UI components
    - `packages/api-client/` — typed API client
@@ -1184,7 +1368,7 @@ None (auth only)
 - [ ] Create retry logic with exponential backoff
 - [ ] Add circuit breaker pattern
 - [ ] Set up TanStack Query provider and configuration
-- [ ] Create API hooks: `useSearch`, `useChat`, `useChatStream`
+- [ ] Create API hooks: `useSearch`, `useChat` (note: `useChatStream` is post-MVP)
 - [ ] Add rate limit header parsing and display
 
 **Key Files to Create:**
@@ -1257,11 +1441,11 @@ Create typed API client with error handling
 - [ ] Create `ScopeSelector` component (precedent only for MVP)
 - [ ] Create `SearchResults` container component
 - [ ] Create `SearchResultCard` component with metadata display
-- [ ] Implement URL state sync (`/search?q=...&scope=...`)
+- [ ] Implement URL state sync (`/?q=...&scope=...`) — see Section 8.2 for MVP URL pattern
 - [ ] Add "Load more" pagination with cursor support
 - [ ] Create empty state component with suggestions
 - [ ] Create loading skeleton components
-- [ ] Add search history to localStorage
+- [ ] Add search history to localStorage (store preview only per Section 7.3.8)
 - [ ] Implement query length validation (max 500 chars)
 
 **Key Files to Create:**
@@ -1566,7 +1750,7 @@ vnlaw-webapps/
 │       │   ├── routes/             # Page components
 │       │   │   ├── index.tsx       # / - Combined search + chat
 │       │   │   ├── access-denied.tsx
-│       │   │   └── settings.tsx    # Optional
+│       │   │   └── settings.tsx    # Required (Workspace connection, user prefs)
 │       │   ├── components/         # Feature components
 │       │   │   ├── layout/
 │       │   │   ├── search/
@@ -1621,8 +1805,9 @@ vnlaw-webapps/
 │       ├── ci.yml
 │       └── deploy.yml
 ├── netlify.toml
-├── package.json                    # Root package.json (workspaces)
-├── pnpm-workspace.yaml             # If using pnpm
+├── package.json                    # Root package.json (pnpm workspaces)
+├── pnpm-workspace.yaml             # pnpm workspace configuration
+├── pnpm-lock.yaml                  # pnpm lockfile
 ├── tsconfig.base.json              # Shared TypeScript config
 └── README.md
 ```
@@ -1642,6 +1827,8 @@ vnlaw-webapps/
 ---
 
 ## 19. TypeScript Interface Definitions
+
+**Note:** These types are an **initial stub** for development bootstrapping. Once `openapi.yaml` is created (see Section 6.0), types MUST be generated from OpenAPI using `openapi-typescript`. The generated types in `packages/shared/src/types/generated/api.ts` become authoritative; these manual types should be removed or relegated to a reference file.
 
 ### 19.1 API Types
 
@@ -1717,9 +1904,15 @@ export interface SearchResponse {
 
 // ============ Chat Types ============
 
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ChatRequest {
   conversationId?: string | null;
   message: string;
+  messages?: ChatMessage[];  // Full conversation history for multi-turn context
   scope: Scope;
   regenerate?: boolean;
 }
@@ -1734,12 +1927,16 @@ export interface Citation {
 export interface ChatResponse {
   requestId: string;
   conversationId: string;
+  messageId: string;  // Use this ID for feedback submission
   answer: string;
   citations: Citation[];
   auth: AuthStatus;
+  contextLimitWarning?: boolean;  // True if conversation was truncated
 }
 
-// ============ SSE Event Types ============
+// ============ SSE Event Types (POST-MVP) ============
+// These types are placeholders for future streaming implementation.
+// Do not implement until STREAMING_ENABLED feature is activated.
 
 export interface SSEStartEvent {
   type: 'start';
@@ -1781,14 +1978,20 @@ export type ErrorCode =
   | 'AUTH_INVALID_TOKEN'
   | 'AUTH_DOMAIN_REJECTED'
   | 'AUTH_GOOGLE_DISCONNECTED'
-  | 'RATE_LIMITED'
-  | 'SEARCH_TIMEOUT'
-  | 'SEARCH_PARTIAL_FAILURE'
-  | 'SERVICE_UNAVAILABLE'
-  | 'DATASTORE_UNAVAILABLE'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'VALIDATION_ERROR'
   | 'INVALID_REQUEST'
   | 'QUERY_TOO_LONG'
+  | 'RATE_LIMITED'
+  | 'SEARCH_TIMEOUT'
+  | 'UPSTREAM_ERROR'
+  | 'SERVICE_UNAVAILABLE'
+  | 'DATASTORE_UNAVAILABLE'
   | 'INTERNAL_ERROR';
+
+// Note: SEARCH_PARTIAL_FAILURE is NOT an error code. Partial success is returned
+// as HTTP 200/207 with SearchResponse.status = "partial". See Section 6.2.2.
 
 export interface APIError {
   code: ErrorCode;
@@ -1796,7 +1999,7 @@ export interface APIError {
   details?: Record<string, unknown>;
   requestId: string;
   retryable: boolean;
-  retryAfterMs?: number;
+  retryAfterSeconds?: number | null;  // In seconds (not milliseconds)
 }
 
 export interface APIErrorResponse {
@@ -1888,6 +2091,7 @@ export interface FeatureFlags {
   STREAMING_ENABLED: boolean;
   FEEDBACK_ENABLED: boolean;
   EXPORT_ENABLED: boolean;
+  INFOBANK_SEARCH_ENABLED: boolean;
 }
 ```
 
@@ -2060,6 +2264,8 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.kinde.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.vnlaw.app https://*.kinde.com; frame-ancestors 'none'; form-action 'self'"
 
 # Cache static assets
 [[headers]]
@@ -2069,13 +2275,15 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
 
 # Deploy contexts
 [context.production]
-  environment = { VITE_ENV = "production" }
+  environment = { VITE_ENV = "production", VITE_DEMO_MODE = "false" }
 
 [context.staging]
-  environment = { VITE_ENV = "staging" }
+  # staging.vnlaw.app branch deploy - uses real Kinde auth
+  environment = { VITE_ENV = "staging", VITE_DEMO_MODE = "false" }
 
 [context.deploy-preview]
-  environment = { VITE_ENV = "preview" }
+  # PR previews use Demo Mode (no real auth - see Section 13.2)
+  environment = { VITE_ENV = "preview", VITE_DEMO_MODE = "true" }
 ```
 
 ---
@@ -2136,5 +2344,8 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
 | 1.2.0 | 2025-12-22 | Added TypeScript interfaces, environment config |
 | 1.3.0 | 2025-12-22 | AI-Agent ready optimizations |
 | 1.4.0 | 2025-12-23 | Contract governance, Demo Mode, non-streaming MVP, security clarifications |
+| 1.5.0 | 2025-12-24 | Critical contract fixes: added `messageId` to chat response, fixed `retryAfterSeconds` type, completed ErrorCode union, removed SEARCH_PARTIAL_FAILURE from error codes (partial is success), clarified `/v1/health` auth exception, corrected feature flag defaults, unified URL routing to `/`, defined `requestId` as UUID v4, documented `_meta` field policy, standardized scope format, added security requirements (XSS, external links, Demo Mode guard), added toolchain specification, clarified auth/connect pattern, added CORS requirements |
+| 1.5.1 | 2025-12-24 | Consistency fixes: fixed section numbering (6.4/6.5), fixed Phase 3 URL pattern, made `/settings` consistently Required, clarified Netlify publish dir for monorepo, removed invalid JSON comments, added `INFOBANK_SEARCH_ENABLED` to FeatureFlags type, completed retry matrix with 502, expanded canonical result model, added CSP/HSTS to netlify.toml, aligned recent searches with privacy guidance, clarified requestId vs X-Request-Id, picked pnpm + Vitest, marked Section 19 types as stub |
+| 1.5.2 | 2025-12-24 | Design decisions implemented: (1) Generated `openapi.yaml` from Section 6.2 — now ✅ Ready; (2) Multi-turn chat uses stateless `messages[]` array with `contextLimitWarning` field; (3) SSE streaming marked as POST-MVP deferred with hook for future; (4) Added dynamic CORS origin validation pattern for `*.netlify.app` previews; (5) Preview auth strategy: PR previews use Demo Mode, `staging.vnlaw.app` uses real Kinde auth |
 
-*End of SRS v1.4.0*
+*End of SRS v1.5.2*
