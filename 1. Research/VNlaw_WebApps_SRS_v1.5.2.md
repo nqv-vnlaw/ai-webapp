@@ -721,7 +721,7 @@ Response:
 | `metadata.confidentiality` | enum | No | `internal`\|`public` |
 | `metadata.language` | enum | No | `vi`\|`en` |
 
-**Note:** All `metadata.*` fields are optional. BFF includes them when available from Discovery Engine.
+**Note:** The `metadata` object is always present (may be empty). All `metadata.*` fields are optional; BFF includes them when available from Discovery Engine.
 
 **Adapter Responsibility:**
 - Field mapping from Discovery Engine format to canonical format is the **BFF's responsibility**
@@ -821,7 +821,7 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 All API responses include:
 - `X-RateLimit-Limit`
 - `X-RateLimit-Remaining`
-- `X-RateLimit-Reset`
+- `X-RateLimit-Reset` (Unix epoch seconds)
 - `Retry-After` (on 429, in seconds)
 
 ### 6.6 Retry UX Canon
