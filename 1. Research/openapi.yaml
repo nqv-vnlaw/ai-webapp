@@ -45,6 +45,9 @@ paths:
         MVP supports only `precedent` scope.
       tags:
         - Search
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -109,6 +112,9 @@ paths:
         For multi-turn conversations, include the full message history in the `messages` array.
       tags:
         - Chat
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -160,6 +166,9 @@ paths:
       description: Submit thumbs up/down feedback with optional comment on a chat answer.
       tags:
         - Chat
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
       requestBody:
         required: true
         content:
@@ -193,6 +202,9 @@ paths:
       description: Returns current user information including Google Workspace connection status.
       tags:
         - User
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: User profile retrieved
@@ -214,6 +226,9 @@ paths:
       description: Returns feature flags for the current user/environment.
       tags:
         - System
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
       responses:
         '200':
           description: Feature flags retrieved
@@ -251,6 +266,22 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Kinde access token
+  parameters:
+    XSessionId:
+      name: X-Session-Id
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Client-generated session ID persisted per browser tab (required for all authenticated endpoints).
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional client-generated request ID (UUID v4). If omitted, backend generates its own requestId.
 
   schemas:
     # ============ Enums ============

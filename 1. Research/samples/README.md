@@ -1,11 +1,13 @@
 # Sample JSON Files for VNLaw Web Apps
 
-These sample JSON files provide reference implementations for frontend development and MSW mock handlers. They match the canonical API format defined in **SRS v1.4.0 Section 6.2**.
+These sample JSON files provide reference implementations for frontend development and MSW mock handlers. They align with **SRS v1.5.2** and `1. Research/openapi.yaml`.
 
 ## Files
 
 | File | Endpoint | Description |
 |------|----------|-------------|
+| `upstream_discovery_engine_answer_minimal.json` | (Upstream) | Minimal raw Discovery Engine answer/reference shape (for BFF adapter development) |
+| `search_response_success_minimal.json` | `POST /v1/search` | Minimal canonical `SearchResponse` (paired with upstream sample) |
 | `search_response_success.json` | `POST /v1/search` | Successful search with 5 results, answer, and pagination |
 | `search_response_empty.json` | `POST /v1/search` | No results found |
 | `search_response_partial.json` | `POST /v1/search` | Partial success (one datastore failed) |
@@ -13,6 +15,12 @@ These sample JSON files provide reference implementations for frontend developme
 | `error_responses.json` | All | All error codes from Section 6.3 |
 | `me_response.json` | `GET /v1/me` | User profile (connected/disconnected variants) |
 | `flags_response.json` | `GET /v1/flags` | Feature flags (MVP/post-MVP variants) |
+
+## Naming Note
+
+Legacy sample files with a trailing ` 2` suffix were renamed to remove spaces and clarify roles:
+- `de_reference_shape_minimal 2.json` → `upstream_discovery_engine_answer_minimal.json`
+- `bff_normalized_response_success 2.json` → `search_response_success_minimal.json`
 
 ## Data Source
 
