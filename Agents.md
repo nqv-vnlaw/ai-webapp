@@ -38,7 +38,7 @@
 > ⚠️ **These requirements are BLOCKERS. Implementation cannot proceed safely without them.**
 
 ### 1. OAuth Connect Contract (Issue #1)
-- **Status:** ✅ Resolved in OpenAPI v1.0.2
+- **Status:** ✅ Resolved in OpenAPI v1.0.3
 - **Endpoints Required:** `GET /v1/oauth/google/connect`, `GET /v1/oauth/google/callback`, `DELETE /v1/me/workspace`
 - **Impact:** Frontend cannot implement "Connect Google Workspace" without these endpoints
 - **Reference:** SRS Section 16.1.1
@@ -65,7 +65,7 @@
 
 | Artifact | Status | Location |
 |----------|--------|----------|
-| **OpenAPI Spec** | ✅ Ready | `1. Research/openapi.yaml` (v1.0.2) |
+| **OpenAPI Spec** | ✅ Ready | `1. Research/openapi.yaml` (v1.0.3) |
 | **SRS Document** | ✅ Ready | `1. Research/VNlaw_WebApps_SRS_v1.5.2.md` |
 | **Sample JSON** | ✅ Ready | `1. Research/samples/` |
 
@@ -138,6 +138,51 @@ Kinde is source of truth for "who is logged in." Google OAuth tokens required on
 - **Routing:** Combined search + chat on `/` (MVP canonical route)
 - **State Management:** TanStack Query for API state, URL params for search state
 - **Authentication:** Kinde SDK handles OAuth flow; tokens in memory only
+
+---
+
+## MCP Tools for Documentation & Research
+
+When implementing features, use these MCP tools to obtain authoritative information:
+
+### Ref MCP (Documentation Search)
+Use for searching and reading library/framework documentation:
+```bash
+# Search for library documentation
+mcp__Ref__ref_search_documentation:
+  query: "React Hook Form validation patterns"
+
+# Read specific documentation URL
+mcp__Ref__ref_read_url:
+  url: "https://react-hook-form.com/form-builder"
+```
+
+**When to use:**
+- Learning React Hook Form, TanStack Query, or Kinde SDK patterns
+- Researching shadcn/ui component APIs
+- Looking up Tailwind CSS directives
+- Checking zod validation examples
+
+### Exa AI MCP (Web Search & Code Context)
+Use for searching current libraries and getting code examples:
+```bash
+# Search for programming examples
+mcp__exa__get_code_context_exa:
+  query: "React useCallback performance optimization patterns"
+  tokensNum: 5000
+
+# General web search
+mcp__exa__web_search_exa:
+  query: "Vite environment variables configuration 2025"
+  numResults: 8
+  type: "auto"
+```
+
+**When to use:**
+- Finding current best practices for libraries (React, TypeScript, Vite)
+- Searching for code examples and implementation patterns
+- Looking up library version differences or migration guides
+- Researching current testing frameworks and tooling
 
 ---
 

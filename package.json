@@ -1,0 +1,25 @@
+{
+  "name": "vnlaw-webapps",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VNlaw Web Apps - Multi-application web frontend platform",
+  "scripts": {
+    "build": "pnpm --filter @vnlaw/precedent-search build",
+    "dev": "pnpm --filter @vnlaw/precedent-search dev",
+    "lint": "pnpm --filter @vnlaw/precedent-search lint && pnpm --filter @vnlaw/auth lint",
+    "typecheck": "pnpm --filter @vnlaw/precedent-search typecheck && pnpm --filter @vnlaw/auth typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
+
