@@ -1,0 +1,193 @@
+{
+  "_description": "Sample error responses for all error codes defined in SRS v1.5.2 Section 6.3",
+
+  "AUTH_INVALID_TOKEN": {
+    "error": {
+      "code": "AUTH_INVALID_TOKEN",
+      "message": "Your session has expired. Please sign in again.",
+      "requestId": "87846195-95a4-4076-ad4d-e2e288258b92",
+      "details": {},
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "AUTH_DOMAIN_REJECTED": {
+    "error": {
+      "code": "AUTH_DOMAIN_REJECTED",
+      "message": "Access is restricted to VNlaw employees (@vnlaw.com.vn).",
+      "requestId": "fd49b9a3-4d13-4bf1-b84c-d63a6b32c778",
+      "details": {
+        "providedDomain": "gmail.com",
+        "allowedDomain": "vnlaw.com.vn"
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "AUTH_GOOGLE_DISCONNECTED": {
+    "error": {
+      "code": "AUTH_GOOGLE_DISCONNECTED",
+      "message": "Connect your Google Workspace to search internal documents.",
+      "requestId": "640205a2-db02-485f-a1f0-08eb173468eb",
+      "details": {
+        "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=https://vnlaw.app/settings?workspace_connected=1",
+        "requiredScopes": ["cloud_search"]
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "FORBIDDEN": {
+    "error": {
+      "code": "FORBIDDEN",
+      "message": "You do not have permission to perform this action.",
+      "requestId": "6e136704-ae49-4012-8112-3b1587e63331",
+      "details": {
+        "reason": "insufficient_permissions"
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "NOT_FOUND": {
+    "error": {
+      "code": "NOT_FOUND",
+      "message": "The requested resource was not found.",
+      "requestId": "ab81aa0e-d254-4b98-bbbc-d78e92504468",
+      "details": {
+        "resource": "/v1/unknown"
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "INVALID_REQUEST": {
+    "error": {
+      "code": "INVALID_REQUEST",
+      "message": "Invalid request. Please check your input.",
+      "requestId": "c44d2fd2-ed69-4131-9c6b-a830c0a93227",
+      "details": {
+        "hint": "Malformed JSON or missing required fields"
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "RATE_LIMITED": {
+    "error": {
+      "code": "RATE_LIMITED",
+      "message": "Too many requests. Please wait a moment.",
+      "requestId": "56396e60-deb3-4ce5-8339-e2bb9f28d543",
+      "details": {
+        "limit": 60,
+        "window": "1 minute",
+        "current": 63
+      },
+      "retryable": true,
+      "retryAfterSeconds": 30
+    }
+  },
+
+  "SEARCH_TIMEOUT": {
+    "error": {
+      "code": "SEARCH_TIMEOUT",
+      "message": "Search is taking longer than expected. Please try again.",
+      "requestId": "3d9e07da-2c0d-4893-99d3-b3a10325f3b8",
+      "details": {
+        "timeoutMs": 30000,
+        "elapsedMs": 30500
+      },
+      "retryable": true,
+      "retryAfterSeconds": 5
+    }
+  },
+
+  "VALIDATION_ERROR": {
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "Invalid request. Please check your input.",
+      "requestId": "9b11f402-ee43-4ab9-8ff9-eb23958ee56e",
+      "details": {
+        "fields": {
+          "query": "Query cannot be empty",
+          "scope": "Invalid scope 'all'. Must be one of: precedent, infobank, both, workspace"
+        }
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "QUERY_TOO_LONG": {
+    "error": {
+      "code": "QUERY_TOO_LONG",
+      "message": "Query is too long. Maximum 500 characters.",
+      "requestId": "567b718f-d0f9-406e-bdda-7131ddf39b0f",
+      "details": {
+        "maxLength": 500,
+        "actualLength": 623
+      },
+      "retryable": false,
+      "retryAfterSeconds": null
+    }
+  },
+
+  "SERVICE_UNAVAILABLE": {
+    "error": {
+      "code": "SERVICE_UNAVAILABLE",
+      "message": "Service temporarily unavailable. Retrying...",
+      "requestId": "e1fa69b2-d6ab-47be-a1d8-67c9ca62e8ed",
+      "details": {
+        "service": "discovery-engine",
+        "region": "asia-southeast1"
+      },
+      "retryable": true,
+      "retryAfterSeconds": 10
+    }
+  },
+
+  "UPSTREAM_ERROR": {
+    "error": {
+      "code": "UPSTREAM_ERROR",
+      "message": "A required service is temporarily unavailable. Please try again.",
+      "requestId": "f287bc67-7b94-41a5-8909-c5ced730e604",
+      "details": {
+        "upstream": "Discovery Engine API",
+        "status": 503
+      },
+      "retryable": true,
+      "retryAfterSeconds": 15
+    }
+  },
+
+  "DATASTORE_UNAVAILABLE": {
+    "error": {
+      "code": "DATASTORE_UNAVAILABLE",
+      "message": "Some data sources are temporarily unavailable.",
+      "requestId": "466ca001-9949-41a4-a8e6-f1adaf07d2b9",
+      "details": {
+        "datastore": "infobank",
+        "reason": "timeout"
+      },
+      "retryable": true,
+      "retryAfterSeconds": 10
+    }
+  },
+
+  "INTERNAL_ERROR": {
+    "error": {
+      "code": "INTERNAL_ERROR",
+      "message": "Something went wrong. Please try again later.",
+      "requestId": "0ef98924-bc6e-4de2-b732-77f5fb507595",
+      "details": {},
+      "retryable": true,
+      "retryAfterSeconds": 5
+    }
+  }
+}

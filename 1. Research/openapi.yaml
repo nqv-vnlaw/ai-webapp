@@ -1,0 +1,1924 @@
+openapi: 3.0.3
+info:
+  title: VNlaw Web Apps BFF API
+  description: |
+    Backend-for-Frontend API for VNlaw Web Apps.
+
+    This API serves the Precedent Search Bot web application and future VNlaw web apps.
+    All endpoints except `/v1/health`, `/v1/oauth/google/connect`, and `/v1/oauth/google/callback` require Kinde JWT authentication.
+
+    **Contract Governance:** This file is the single source of truth for the API contract.
+    See SRS Section 6.0 for governance rules.
+
+    ## CORS Policy
+
+    All API routes support Cross-Origin Resource Sharing (CORS) with strict origin validation.
+
+    ### Preflight Requests (OPTIONS)
+
+    All API endpoints support `OPTIONS` preflight requests (handled by middleware/gateway layer).
+    The OPTIONS responses include:
+    - `Access-Control-Allow-Origin`: Validated origin (echoed from request, NOT wildcard)
+    - `Access-Control-Allow-Methods`: `GET, POST, DELETE, OPTIONS`
+    - `Access-Control-Allow-Headers`: `Authorization, Content-Type, X-Session-Id, X-Request-Id`
+    - `Access-Control-Max-Age`: `86400` (24 hours)
+    - `Vary`: `Origin` (required when origin is dynamic)
+
+    **Note:** Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight. Backend MUST handle
+    OPTIONS requests for all routes. While OPTIONS methods are not explicitly defined for each path below
+    (to avoid verbosity), the middleware/gateway layer responds to all OPTIONS requests with the headers
+    above. See `/v1/search` OPTIONS definition for the reference contract.
+
+    ### Allowed Origins
+
+    **Production:**
+    - `https://vnlaw.app` (production SPA)
+    - `https://staging.vnlaw.app` (staging SPA)
+    - **Forbidden:** Wildcard patterns like `*.netlify.app` (security: prevents malicious sites on same platform)
+    - Origin validation uses exact string matching (NOT regex)
+
+    **Preview/Development:**
+    - `https://*-vnlaw-app.netlify.app` (restricted pattern for PR previews)
+    - OR: Firestore allowlist of approved preview URLs (more restrictive)
+    - `http://localhost:5173`, `http://localhost:3000` (local development)
+
+    ### Credentials
+
+    - `Access-Control-Allow-Credentials`: **NOT USED**
+    - No cookies or session cookies for API authentication
+    - All authentication via `Authorization: Bearer <token>` (Kinde JWT)
+
+    ### Implementation
+
+    - CORS validation happens at the edge (Cloudflare Worker or Cloud Run ingress) before application logic
+    - Origin validation uses exact string matching (NOT regex suffix matching)
+    - Rejected origins logged as security events
+
+    **Reference:** SRS Section 3.3.1 (Issues #6, #7)
+
+    ## Rate Limiting
+
+    **Authenticated Endpoints** (`/v1/search`, `/v1/chat`, `/v1/feedback`, `/v1/me`):
+    - Limit: 60 requests/minute per authenticated user (keyed by Kinde user ID)
+    - Burst allowance: 10 requests (brief spikes tolerated)
+    - Scope: Per-user (not per-IP)
+
+    **Health Endpoint** (`/v1/health`):
+    - Limit: 120 requests/minute per IP address
+    - No authentication required
+
+    **OAuth Endpoints** (public):
+    - Limit: 10 requests/minute per IP address
+    - Prevents abuse of OAuth flow initiation
+
+    **Rate Limit Headers** (included in all responses):
+    - `X-RateLimit-Limit`: Maximum requests allowed in current window
+    - `X-RateLimit-Remaining`: Remaining requests in current window
+    - `X-RateLimit-Reset`: Unix epoch seconds when window resets
+    - `Retry-After`: Seconds to wait (429 responses only)
+
+    **Reference:** SRS Section 6.5
+
+    ## Changelog
+
+    ### v1.0.3 (2025-12-25)
+    - Fixed workspace field constraint (always present with connected state, not null after disconnect)
+    - Added UUID format constraint to X-Session-Id parameter (matches SRS crypto.randomUUID() implementation)
+    - Documented rate limit policies in API description (60 req/min for auth endpoints, 120 req/min for health, 10 req/min for OAuth)
+    - Updated SRS cross-references to remove outdated "BLOCKER" language
+
+    ### v1.0.2 (2025-12-25)
+    - **BREAKING:** Made `/v1/oauth/google/connect` public (removed auth requirement) to enable browser implementation
+    - Added session cookie binding for OAuth state (replaces Authorization header requirement)
+    - Removed X-Session-Id/X-Request-Id requirements from OAuth connect endpoint
+    - Added OPTIONS method definition for `/v1/search` as CORS preflight reference contract
+
+    ### v1.0.1 (2025-12-25)
+    - Added OAuth endpoints, typed error details, input constraints, _meta field, CORS documentation
+
+  version: 1.0.3
+  contact:
+    name: VNlaw IT
+    email: it@vnlaw.com.vn
+
+servers:
+  - url: https://api.vnlaw.app
+    description: Production
+  - url: https://api-staging.vnlaw.app
+    description: Staging
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Search
+    description: Legal document search operations
+  - name: Chat
+    description: Question-answering with citations
+  - name: OAuth
+    description: Google Workspace OAuth integration
+  - name: User
+    description: User profile and settings
+  - name: System
+    description: Health checks and feature flags
+
+security:
+  - BearerAuth: []
+
+paths:
+  /v1/search:
+    post:
+      operationId: search
+      summary: Search legal documents
+      description: |
+        Search across legal document datastores (precedent, infobank, workspace).
+        MVP supports only `precedent` scope.
+      tags:
+        - Search
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Search completed successfully
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '207':
+          description: Partial success - some datastores failed
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          description: Invalid request
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Request timeout
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    options:
+      operationId: searchPreflight
+      summary: CORS preflight for search endpoint
+      description: |
+        Handles CORS preflight (OPTIONS) requests for /v1/search.
+
+        **Note:** This OPTIONS definition serves as a reference contract for CORS preflight across
+        all API endpoints. While not every endpoint has an explicit OPTIONS definition in this spec
+        (to avoid verbosity), the middleware/gateway layer responds to OPTIONS for all paths with
+        the same headers shown here.
+      tags:
+        - Search
+      security: []  # Preflight requests don't include Authorization
+      responses:
+        '204':
+          description: Preflight successful
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: string
+                example: "https://vnlaw.app"
+              description: Validated origin (echoed from request, NOT wildcard)
+            Access-Control-Allow-Methods:
+              schema:
+                type: string
+                example: "POST, OPTIONS"
+              description: Allowed HTTP methods for this endpoint
+            Access-Control-Allow-Headers:
+              schema:
+                type: string
+                example: "Authorization, Content-Type, X-Session-Id, X-Request-Id"
+              description: Allowed request headers (required for custom headers)
+            Access-Control-Max-Age:
+              schema:
+                type: integer
+                example: 86400
+              description: Preflight cache duration in seconds (24 hours)
+            Vary:
+              schema:
+                type: string
+                example: "Origin"
+              description: Required when origin is dynamic (for cache correctness)
+
+  /v1/chat:
+    post:
+      operationId: chat
+      summary: Ask a question and get an answer with citations
+      description: |
+        Submit a question to get an AI-generated answer with citations from legal documents.
+        For multi-turn conversations, include the full message history in the `messages` array.
+      tags:
+        - Chat
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Answer generated successfully
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          description: Invalid request
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '504':
+          description: Request timeout
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/chat/stream:
+    post:
+      operationId: chatStream
+      summary: Streaming chat with citations (POST-MVP)
+      description: |
+        **STATUS: POST-MVP - NOT IMPLEMENTED**
+
+        Server-Sent Events (SSE) streaming version of /v1/chat. Controlled by `STREAMING_ENABLED` feature flag.
+
+        When implemented, will stream answer chunks as SSE events. Frontend must use `fetch()` + `ReadableStream`
+        (not `EventSource` which doesn't support Authorization header).
+
+        MVP uses synchronous /v1/chat endpoint instead. This endpoint specification will be completed when
+        streaming implementation begins.
+      tags:
+        - Chat
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: SSE stream of chat response chunks (POST-MVP - not implemented)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream (detailed schema TBD when streaming implemented)
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied or STREAMING_ENABLED=false
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/feedback:
+    post:
+      operationId: submitFeedback
+      summary: Submit feedback on an answer
+      description: Submit thumbs up/down feedback with optional comment on a chat answer.
+      tags:
+        - Chat
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FeedbackRequest'
+      responses:
+        '200':
+          description: Feedback received
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedbackResponse'
+        '400':
+          description: Invalid request
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/me:
+    get:
+      operationId: getMe
+      summary: Get current user profile
+      description: Returns current user information including Google Workspace connection status.
+      tags:
+        - User
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: User profile retrieved
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          description: Authentication required
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/flags:
+    get:
+      operationId: getFlags
+      summary: Get feature flags
+      description: Returns feature flags for the current user/environment.
+      tags:
+        - System
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Feature flags retrieved
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagsResponse'
+        '401':
+          description: Authentication required
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '502':
+          description: Upstream error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Service unavailable
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns backend health status. No authentication required.
+      tags:
+        - System
+      security: []  # No auth required
+      responses:
+        '200':
+          description: Health status
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /v1/oauth/google/connect:
+    get:
+      operationId: oauthGoogleConnect
+      summary: Initiate Google Workspace OAuth flow
+      description: |
+        Initiates OAuth 2.0 authorization code flow with PKCE for Google Workspace integration.
+        Returns a 302 redirect to Google's OAuth consent screen.
+
+        **Implementation Note:** This endpoint is public (no auth required) because SPAs cannot send
+        Authorization headers or custom headers (X-Session-Id) during a 302 redirect. The frontend
+        initiates this flow via `window.location.href` or an `<a>` tag, which cannot include headers.
+
+        **Security:** Issues cryptographically strong state token (UUID v4 + entropy), stores state with
+        session binding (Kinde user ID from cookie/session, PKCE verifier hash, redirect URL, TTL=10min).
+        The state token provides CSRF protection and session binding. Enforces redirect URL allowlist to
+        prevent open redirect attacks (Issue #3).
+
+        **Session Binding:** Backend extracts Kinde user ID from session cookie (not Authorization header)
+        to bind the state token to the authenticated user.
+      tags:
+        - OAuth
+      security: []  # Public endpoint - browser cannot send auth headers during 302 redirect
+      parameters:
+        - name: redirect
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+          description: |
+            Return URL after OAuth completion. Must match production allowlist:
+            - https://vnlaw.app/workspace
+            - https://staging.vnlaw.app/workspace
+          example: "https://vnlaw.app/workspace"
+      responses:
+        '302':
+          description: Redirect to Google OAuth consent screen
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: |
+                Google OAuth authorization URL with params:
+                - client_id: Google OAuth client ID
+                - redirect_uri: Callback URL (this API's /v1/oauth/google/callback)
+                - state: Cryptographic state token (UUID v4)
+                - scope: https://www.googleapis.com/auth/cloud_search.query
+                - code_challenge: PKCE challenge (base64url-encoded SHA256 hash)
+                - code_challenge_method: S256
+                - access_type: offline (to get refresh token)
+                - prompt: consent
+              example: "https://accounts.google.com/o/oauth2/v2/auth?client_id=...&redirect_uri=...&state=...&scope=...&code_challenge=...&code_challenge_method=S256&access_type=offline&prompt=consent"
+        '400':
+          description: Invalid redirect URL (not in allowlist)
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required (invalid/expired Kinde token)
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: User not authorized for Workspace feature
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/oauth/google/callback:
+    get:
+      operationId: oauthGoogleCallback
+      summary: Handle OAuth callback from Google
+      description: |
+        OAuth 2.0 callback endpoint. Google redirects here after user approves/denies consent.
+
+        **Security:** Validates state token (exists, not expired, not reused, matches current session),
+        validates PKCE code_verifier against stored challenge (Issue #2), verifies Google account email
+        matches Kinde user email to prevent token misbinding (Issue #4), exchanges authorization code for
+        tokens with Google, encrypts tokens with Cloud KMS before storing in Firestore (Issue #5),
+        deletes state token (one-time use).
+
+        **Note:** This is a public callback endpoint (no Kinde auth). X-Session-Id and X-Request-Id are
+        not required since Google controls the redirect. Session binding is handled via the state token.
+      tags:
+        - OAuth
+      security: []  # No Kinde auth required (public callback from Google)
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Authorization code from Google (present on success)
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: State token for CSRF protection (always present)
+        - name: error
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Error code if user denied consent or OAuth failed
+          example: "access_denied"
+      responses:
+        '302':
+          description: Redirect back to application
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: |
+                Redirect to the original redirect URL with status query parameter:
+                - Success: {redirectUrl}?status=connected
+                - Failure: {redirectUrl}?status=error&reason={errorCode}
+
+                Error reason codes:
+                - access_denied: User denied consent
+                - state_invalid: State token validation failed (CSRF attack attempt)
+                - state_expired: State token expired (>10min since /connect call)
+                - state_reused: State token already used (replay attack attempt)
+                - email_mismatch: Google account email doesn't match Kinde user (Issue #4)
+                - token_exchange_failed: Failed to exchange code for tokens
+                - storage_failed: Failed to store tokens
+              example: "https://vnlaw.app/workspace?status=connected"
+        '400':
+          description: Invalid callback parameters (missing state or code)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /v1/me/workspace:
+    delete:
+      operationId: disconnectWorkspace
+      summary: Disconnect Google Workspace
+      description: |
+        Revokes Google Workspace OAuth tokens and deletes stored credentials.
+
+        **Security:** Revokes refresh token via Google OAuth API, deletes UserTokens Firestore document,
+        logs revocation event for audit trail.
+      tags:
+        - OAuth
+        - User
+      parameters:
+        - $ref: '#/components/parameters/XSessionId'
+        - $ref: '#/components/parameters/XRequestId'
+      responses:
+        '200':
+          description: Workspace disconnected successfully
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+              example:
+                requestId: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                email: "user@vnlaw.com.vn"
+                name: "User Name"
+                picture: "https://lh3.googleusercontent.com/..."
+                workspace:
+                  connected: false
+                  connectedEmail: null
+                  scopes: []
+                  connectUrl: "https://api.vnlaw.app/v1/oauth/google/connect?redirect=/workspace"
+        '401':
+          description: Authentication required (invalid/expired Kinde token)
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: No workspace connection exists for this user
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limited
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+            Retry-After:
+              $ref: '#/components/headers/Retry-After'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error (failed to revoke tokens)
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Kinde access token
+  headers:
+    X-RateLimit-Limit:
+      schema:
+        type: integer
+        minimum: 0
+      description: Maximum requests allowed in the current window.
+    X-RateLimit-Remaining:
+      schema:
+        type: integer
+        minimum: 0
+      description: Remaining requests in the current window.
+    X-RateLimit-Reset:
+      schema:
+        type: integer
+        minimum: 0
+      description: Unix epoch seconds when the current window resets.
+    Retry-After:
+      schema:
+        type: integer
+        minimum: 0
+      description: Seconds to wait before retrying the request.
+  parameters:
+    XSessionId:
+      name: X-Session-Id
+      in: header
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: |
+        Client-generated session ID (UUID v4) persisted per browser tab.
+        Generated via `crypto.randomUUID()` on first use, stored in sessionStorage.
+        Required for all authenticated endpoints. Unique per tab instance.
+    XRequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional client-generated request ID (UUID v4). If omitted, backend generates its own requestId.
+
+  schemas:
+    # ============ Enums ============
+    Scope:
+      type: string
+      enum:
+        - precedent
+        - infobank
+        - both
+        - workspace
+      description: Search scope. MVP supports only `precedent`.
+
+    Source:
+      type: string
+      enum:
+        - precedent
+        - infobank
+        - workspace
+      description: Document source datastore.
+
+    DocumentType:
+      type: string
+      enum:
+        - judgment
+        - decree
+        - circular
+        - internal
+        - email
+        - doc
+
+    Jurisdiction:
+      type: string
+      enum:
+        - civil
+        - criminal
+        - administrative
+        - labor
+
+    Language:
+      type: string
+      enum:
+        - vi
+        - en
+
+    Confidentiality:
+      type: string
+      enum:
+        - internal
+        - public
+
+    ErrorCode:
+      type: string
+      enum:
+        - AUTH_INVALID_TOKEN
+        - AUTH_DOMAIN_REJECTED
+        - AUTH_GOOGLE_DISCONNECTED
+        - FORBIDDEN
+        - NOT_FOUND
+        - VALIDATION_ERROR
+        - INVALID_REQUEST
+        - QUERY_TOO_LONG
+        - RATE_LIMITED
+        - SEARCH_TIMEOUT
+        - REQUEST_TIMEOUT
+        - UPSTREAM_ERROR
+        - SERVICE_UNAVAILABLE
+        - DATASTORE_UNAVAILABLE
+        - INTERNAL_ERROR
+      description: Canonical error codes. See SRS Section 6.3.
+
+    # ============ Search Types ============
+    SearchRequest:
+      type: object
+      required:
+        - query
+        - scope
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Search query text
+        scope:
+          $ref: '#/components/schemas/Scope'
+        pageSize:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 10
+          description: Number of results per page
+        cursor:
+          type: string
+          nullable: true
+          maxLength: 2048
+          description: Opaque pagination cursor from previous response
+
+    ResultMetadata:
+      type: object
+      properties:
+        documentType:
+          $ref: '#/components/schemas/DocumentType'
+        date:
+          type: string
+          format: date
+          description: Document date (YYYY-MM-DD)
+        court:
+          type: string
+          description: Court name (for precedent documents)
+        caseNumber:
+          type: string
+          description: Case identifier
+        jurisdiction:
+          $ref: '#/components/schemas/Jurisdiction'
+        parties:
+          type: array
+          items:
+            type: string
+          description: Party names
+        judge:
+          type: string
+          description: Judge name
+        lastModified:
+          type: string
+          format: date-time
+          description: Last modification timestamp (ISO-8601)
+        confidentiality:
+          $ref: '#/components/schemas/Confidentiality'
+        language:
+          $ref: '#/components/schemas/Language'
+
+    SearchResult:
+      type: object
+      required:
+        - title
+        - snippet
+        - url
+        - source
+        - metadata
+      properties:
+        title:
+          type: string
+          description: Document title
+        snippet:
+          type: string
+          maxLength: 500
+          description: Relevant excerpt
+        url:
+          type: string
+          format: uri
+          description: Document URL
+        source:
+          $ref: '#/components/schemas/Source'
+        metadata:
+          $ref: '#/components/schemas/ResultMetadata'
+
+    DatastoreStatus:
+      type: object
+      required:
+        - status
+        - resultCount
+      properties:
+        status:
+          type: string
+          enum:
+            - success
+            - error
+        resultCount:
+          type: integer
+          minimum: 0
+          description: Total matches in datastore (may be approximate)
+        error:
+          type: string
+          nullable: true
+          description: Error message if status is error
+
+    AuthStatus:
+      type: object
+      required:
+        - needsGoogleConnect
+      properties:
+        needsGoogleConnect:
+          type: boolean
+          description: True if user should connect Google Workspace
+        connectUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: OAuth URL to connect Google Workspace
+
+    SearchResponse:
+      type: object
+      required:
+        - requestId
+        - query
+        - scope
+        - status
+        - results
+        - datastoreStatus
+        - auth
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        query:
+          type: string
+          description: Original query
+        scope:
+          $ref: '#/components/schemas/Scope'
+        status:
+          type: string
+          enum:
+            - success
+            - partial
+          description: Overall status. "partial" means some datastores failed.
+        answer:
+          type: string
+          nullable: true
+          description: AI-generated answer summary (optional)
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        nextCursor:
+          type: string
+          nullable: true
+          description: Cursor for next page (null if no more results)
+        datastoreStatus:
+          type: object
+          required:
+            - precedent
+            - infobank
+            - workspace
+          properties:
+            precedent:
+              $ref: '#/components/schemas/DatastoreStatus'
+            infobank:
+              $ref: '#/components/schemas/DatastoreStatus'
+            workspace:
+              $ref: '#/components/schemas/DatastoreStatus'
+        warnings:
+          type: array
+          items:
+            type: string
+          description: Warning messages for partial failures
+        auth:
+          $ref: '#/components/schemas/AuthStatus'
+        _meta:
+          type: object
+          additionalProperties: true
+          description: |
+            Optional debugging/diagnostic metadata. MAY be omitted. Contents MAY change without version bump.
+            Clients SHOULD use passthrough parsing (e.g., Zod `.passthrough()`).
+
+            Example properties:
+            - durationMs: Backend processing time in milliseconds
+            - totalResults: Total number of results found (before pagination)
+            - displayedResults: Number of results included in this response
+            - source: Data source identifier (e.g., "Discovery Engine")
+            - isDemoMode: Whether demo mode is active
+          example:
+            durationMs: 1500
+            totalResults: 69
+            displayedResults: 5
+            source: "Discovery Engine"
+            isDemoMode: false
+
+    # ============ Chat Types ============
+    ChatMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum:
+            - user
+            - assistant
+          description: Message sender role
+        content:
+          type: string
+          description: Message content
+
+    ChatRequest:
+      type: object
+      required:
+        - message
+        - scope
+      properties:
+        conversationId:
+          type: string
+          nullable: true
+          description: Existing conversation ID (null for new conversation)
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Current user message
+        messages:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+          description: |
+            Full conversation history for multi-turn context.
+            Frontend sends all previous messages. Backend uses this for context.
+            If omitted, treated as new conversation.
+        scope:
+          $ref: '#/components/schemas/Scope'
+        regenerate:
+          type: boolean
+          default: false
+          description: If true, regenerate the last assistant response
+
+    Citation:
+      type: object
+      required:
+        - title
+        - url
+        - source
+      properties:
+        title:
+          type: string
+          description: Document title
+        url:
+          type: string
+          format: uri
+          description: Document URL
+        snippet:
+          type: string
+          nullable: true
+          description: Relevant excerpt
+        source:
+          $ref: '#/components/schemas/Source'
+
+    ChatResponse:
+      type: object
+      required:
+        - requestId
+        - conversationId
+        - messageId
+        - answer
+        - citations
+        - auth
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        conversationId:
+          type: string
+          description: Conversation identifier
+        messageId:
+          type: string
+          description: Unique message ID (use for feedback submission)
+        answer:
+          type: string
+          description: AI-generated answer
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Citation'
+        auth:
+          $ref: '#/components/schemas/AuthStatus'
+        contextLimitWarning:
+          type: boolean
+          default: false
+          description: |
+            True if conversation history was truncated due to context window limits.
+            Frontend should display a warning to user.
+        _meta:
+          type: object
+          additionalProperties: true
+          description: |
+            Optional debugging/diagnostic metadata. MAY be omitted. Contents MAY change without version bump.
+            Clients SHOULD use passthrough parsing (e.g., Zod `.passthrough()`).
+
+            Example properties:
+            - durationMs: Backend processing time in milliseconds
+            - source: Data source identifier
+            - isDemoMode: Whether demo mode is active
+          example:
+            durationMs: 850
+            source: "Chat API"
+            isDemoMode: false
+
+    # ============ Feedback Types ============
+    FeedbackRequest:
+      type: object
+      required:
+        - messageId
+        - conversationId
+        - type
+      properties:
+        messageId:
+          type: string
+          description: Message ID from ChatResponse
+        conversationId:
+          type: string
+          description: Conversation ID
+        type:
+          type: string
+          enum:
+            - up
+            - down
+          description: Feedback type (thumbs up/down)
+        comment:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: Optional comment
+
+    FeedbackResponse:
+      type: object
+      required:
+        - requestId
+        - status
+      properties:
+        requestId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - received
+
+    # ============ User Types ============
+    WorkspaceStatus:
+      type: object
+      required:
+        - connected
+        - scopes
+      properties:
+        connected:
+          type: boolean
+          description: Whether Google Workspace is connected
+        connectedEmail:
+          type: string
+          format: email
+          nullable: true
+          description: Connected Google account email
+        scopes:
+          type: array
+          items:
+            type: string
+          description: Granted scope keys (e.g., "cloud_search")
+        connectUrl:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to connect Google Workspace
+
+    UserProfile:
+      type: object
+      required:
+        - requestId
+        - email
+        - workspace
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        email:
+          type: string
+          format: email
+          description: User email (must be @vnlaw.com.vn)
+        name:
+          type: string
+          nullable: true
+          description: User display name
+        picture:
+          type: string
+          format: uri
+          nullable: true
+          description: Profile picture URL
+        workspace:
+          $ref: '#/components/schemas/WorkspaceStatus'
+
+    # ============ System Types ============
+    FeatureFlags:
+      type: object
+      required:
+        - WORKSPACE_SEARCH_ENABLED
+        - CHAT_HISTORY_ENABLED
+        - STREAMING_ENABLED
+        - FEEDBACK_ENABLED
+        - EXPORT_ENABLED
+        - INFOBANK_SEARCH_ENABLED
+      properties:
+        WORKSPACE_SEARCH_ENABLED:
+          type: boolean
+          default: false
+        CHAT_HISTORY_ENABLED:
+          type: boolean
+          default: false
+        STREAMING_ENABLED:
+          type: boolean
+          default: false
+        FEEDBACK_ENABLED:
+          type: boolean
+          default: true
+        EXPORT_ENABLED:
+          type: boolean
+          default: true
+        INFOBANK_SEARCH_ENABLED:
+          type: boolean
+          default: false
+
+    FlagsResponse:
+      type: object
+      required:
+        - requestId
+        - flags
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        flags:
+          $ref: '#/components/schemas/FeatureFlags'
+
+    DependencyStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - up
+            - down
+        latencyMs:
+          type: integer
+          description: Latency in milliseconds
+
+    HealthResponse:
+      type: object
+      required:
+        - requestId
+        - status
+        - version
+        - timestamp
+        - dependencies
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Unique request identifier for tracing
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+        version:
+          type: string
+          description: API version
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DependencyStatus'
+
+    # ============ Error Types ============
+    # Base error properties (shared across all error types)
+    BaseError:
+      type: object
+      required:
+        - code
+        - message
+        - requestId
+        - retryable
+      properties:
+        code:
+          type: string
+          description: Error code (discriminator for error type)
+        message:
+          type: string
+          description: Human-readable error message
+        requestId:
+          type: string
+          format: uuid
+          description: Request ID for support reference
+        retryable:
+          type: boolean
+          description: Whether the request can be retried
+        retryAfterSeconds:
+          type: integer
+          nullable: true
+          description: Seconds to wait before retrying (if retryable)
+
+    # Specific error types with typed details
+    AuthGoogleDisconnectedError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          required:
+            - details
+          properties:
+            code:
+              type: string
+              enum: [AUTH_GOOGLE_DISCONNECTED]
+              description: Error code (fixed for this error type)
+            details:
+              type: object
+              required:
+                - connectUrl
+              properties:
+                connectUrl:
+                  type: string
+                  format: uri
+                  description: OAuth initiation URL for reconnecting Google Workspace
+                  example: "https://api.vnlaw.app/v1/oauth/google/connect?redirect=/workspace"
+                requiredScopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [cloud_search]
+                  description: Required OAuth scopes for reconnection
+                  example: ["cloud_search"]
+
+    ValidationError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum: [VALIDATION_ERROR, INVALID_REQUEST, QUERY_TOO_LONG]
+              description: Error code (validation-related codes)
+            details:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+              description: Field-level validation errors (fieldName -> error messages)
+              example:
+                query: ["Query must be between 1 and 500 characters"]
+                scope: ["Invalid scope value"]
+
+    GenericError:
+      allOf:
+        - $ref: '#/components/schemas/BaseError'
+        - type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - AUTH_INVALID_TOKEN
+                - AUTH_DOMAIN_REJECTED
+                - FORBIDDEN
+                - NOT_FOUND
+                - RATE_LIMITED
+                - SEARCH_TIMEOUT
+                - REQUEST_TIMEOUT
+                - UPSTREAM_ERROR
+                - SERVICE_UNAVAILABLE
+                - DATASTORE_UNAVAILABLE
+                - INTERNAL_ERROR
+              description: Error code (generic error codes)
+            details:
+              type: object
+              additionalProperties: true
+              description: Additional error context (structure varies by error code)
+
+    # Discriminated union of all error types
+    APIError:
+      oneOf:
+        - $ref: '#/components/schemas/AuthGoogleDisconnectedError'
+        - $ref: '#/components/schemas/ValidationError'
+        - $ref: '#/components/schemas/GenericError'
+      discriminator:
+        propertyName: code
+        mapping:
+          AUTH_GOOGLE_DISCONNECTED: '#/components/schemas/AuthGoogleDisconnectedError'
+          VALIDATION_ERROR: '#/components/schemas/ValidationError'
+          INVALID_REQUEST: '#/components/schemas/ValidationError'
+          QUERY_TOO_LONG: '#/components/schemas/ValidationError'
+          AUTH_INVALID_TOKEN: '#/components/schemas/GenericError'
+          AUTH_DOMAIN_REJECTED: '#/components/schemas/GenericError'
+          FORBIDDEN: '#/components/schemas/GenericError'
+          NOT_FOUND: '#/components/schemas/GenericError'
+          RATE_LIMITED: '#/components/schemas/GenericError'
+          SEARCH_TIMEOUT: '#/components/schemas/GenericError'
+          REQUEST_TIMEOUT: '#/components/schemas/GenericError'
+          UPSTREAM_ERROR: '#/components/schemas/GenericError'
+          SERVICE_UNAVAILABLE: '#/components/schemas/GenericError'
+          DATASTORE_UNAVAILABLE: '#/components/schemas/GenericError'
+          INTERNAL_ERROR: '#/components/schemas/GenericError'
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/APIError'

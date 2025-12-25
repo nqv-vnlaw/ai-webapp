@@ -1,0 +1,55 @@
+{
+  "requestId": "58d24a1e-aae0-4dfb-83ab-05e55221002b",
+  "query": "Seller shall not be liable for any Claim to the extent Losses are recoverable under Purchaser's insurance policies.",
+  "scope": "precedent",
+  "status": "success",
+  "answer": "This clause limits the Seller’s liability where the Purchaser can recover the same losses through insurance, preventing double recovery and shifting first recourse to insurance.",
+  "results": [
+    {
+      "title": "2025 1 10 Email response to Molex's question on LSA_1.3.pdf",
+      "snippet": "Analysis of limitation of liability clauses and insurance recovery provisions, including how claims may be limited when losses are covered by insurance.",
+      "url": "https://drive.google.com/file/d/1-LqYtDNxv8lWFroH2ztHWW_V3T1CdfoK/view",
+      "source": "precedent",
+      "metadata": {
+        "documentType": "internal",
+        "date": "2025-01-10",
+        "confidentiality": "internal",
+        "language": "en"
+      }
+    },
+    {
+      "title": "RE: LSA Review",
+      "snippet": "Email thread discussing LSA terms, including indemnities, limitations, and insurance recovery mechanisms in a transaction context.",
+      "url": "https://drive.google.com/file/d/18226961902971622463/view",
+      "source": "precedent",
+      "metadata": {
+        "documentType": "email",
+        "confidentiality": "internal",
+        "language": "en"
+      }
+    }
+  ],
+  "nextCursor": "eyJwYWdlIjogMiwgInNlYXJjaF9rZXkiOiAiZXhhbXBsZSJ9",
+  "datastoreStatus": {
+    "precedent": {
+      "status": "success",
+      "resultCount": 69,
+      "error": null
+    },
+    "infobank": {
+      "status": "success",
+      "resultCount": 0,
+      "error": null
+    },
+    "workspace": {
+      "status": "success",
+      "resultCount": 0,
+      "error": null
+    }
+  },
+  "warnings": [],
+  "auth": {
+    "needsGoogleConnect": false,
+    "connectUrl": null
+  }
+}

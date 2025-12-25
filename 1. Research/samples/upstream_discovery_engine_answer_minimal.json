@@ -1,0 +1,71 @@
+{
+  "answer": {
+    "answer_text": "Tòa án tuyên chấp nhận yêu cầu khởi kiện của người lao động về việc yêu cầu doanh nghiệp trả lương làm thêm theo Điều 97 của Bộ luật Lao động 2019.",
+    "references": [
+      {
+        "document": "projects/PROJECT/locations/global/collections/default_collection/dataStores/precedent/documents/1-LqYtDNxv8lWFroH2ztHWW_V3T1CdfoK",
+        "derived_struct_data": {
+          "title": "2025 1 10 Email response to Molex's question on LSA_1.3.pdf",
+          "snippets": [
+            {
+              "snippet": "Analysis of limitation of liability clauses and insurance recovery provisions, including how claims may be limited when losses are covered by insurance."
+            }
+          ],
+          "link": "https://drive.google.com/file/d/1-LqYtDNxv8lWFroH2ztHWW_V3T1CdfoK/view"
+        },
+        "relevance_score": 0.92
+      },
+      {
+        "document": "projects/PROJECT/locations/global/collections/default_collection/dataStores/precedent/documents/18226961902971622463",
+        "derived_struct_data": {
+          "title": "RE: LSA Review",
+          "snippets": [
+            {
+              "snippet": "Email thread discussing the review of LSA terms, including indemnities, limitations, and insurance recovery mechanisms."
+            }
+          ],
+          "link": "https://drive.google.com/file/d/18226961902971622463/view"
+        },
+        "relevance_score": 0.89
+      }
+    ],
+    "steps": [
+      {
+        "actions": [
+          {
+            "observation": {
+              "search_results": [
+                {
+                  "document": "projects/PROJECT/locations/global/collections/default_collection/dataStores/precedent/documents/1-LqYtDNxv8lWFroH2ztHWW_V3T1CdfoK",
+                  "derived_struct_data": {
+                    "title": "2025 1 10 Email response to Molex's question on LSA_1.3.pdf",
+                    "snippets": [
+                      {
+                        "snippet": "Analysis of limitation of liability clauses and insurance recovery provisions…"
+                      }
+                    ],
+                    "link": "https://drive.google.com/file/d/1-LqYtDNxv8lWFroH2ztHWW_V3T1CdfoK/view"
+                  },
+                  "relevance_score": 0.92
+                },
+                {
+                  "document": "projects/PROJECT/locations/global/collections/default_collection/dataStores/precedent/documents/18226961902971622463",
+                  "derived_struct_data": {
+                    "title": "RE: LSA Review",
+                    "snippets": [
+                      {
+                        "snippet": "Email thread discussing LSA review, indemnities, limitations…"
+                      }
+                    ],
+                    "link": "https://drive.google.com/file/d/18226961902971622463/view"
+                  },
+                  "relevance_score": 0.89
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
