@@ -1,10 +1,11 @@
 # VNlaw Web Apps Frontend Platform — Software Requirements Specification (SRS)
 **Document ID:** VNLAW-WEBAPPS-SRS
-**Version:** 1.5.2 (AI-Agent Ready)
+**Version:** 1.6.1 (AI-Agent Ready)
 **Status:** Draft (Build-ready baseline)
+**Note:** v1.6.1 fixes 8 internal contradictions + completes 2 missing items; v1.6.0 addressed 23 issues from consolidated review
 **Primary application (App #1):** Precedent Search Bot (Web)
 **Repository:** Separate frontend repository (monorepo) e.g., `vnlaw-webapps`
-**Last updated:** 2025-12-24
+**Last updated:** 2025-12-25
 **Format:** Optimized for AI-assisted development with phased implementation  
 
 ---
@@ -19,6 +20,30 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 
 ---
 
+## 0.2 Critical Security Requirements (Must Complete Before Implementation)
+
+> ⚠️ **These requirements are BLOCKERS. Implementation cannot proceed safely without them.**
+
+### 1. OAuth Connect Contract (Issue #1)
+- Complete OAuth endpoint specification required (see Section 16.1.1)
+- Google Workspace connect/callback/disconnect flow must be fully specified in OpenAPI
+- **Impact:** Frontend cannot implement "Connect Google Workspace" without these endpoints
+- **Resolution:** Add endpoints to `openapi.yaml` before Phase 2
+
+### 2. Token Storage Security (Issue #5)
+- Encryption, access control, revocation, and audit requirements defined (see Sections 3.4.1, 7.3.8, 16.1.2)
+- Firestore security rules for UserTokens must be implemented before storing tokens
+- **Impact:** Storing OAuth tokens without proper security is catastrophic (Workspace data exposure)
+- **Resolution:** Implement Cloud KMS encryption, Firestore rules, and audit logging before handling tokens
+
+### 3. CORS Configuration (Issue #6)
+- Production CORS policy locked down (see Section 3.3.1)
+- Preflight handling documented in Section 6.2.0
+- **Impact:** Browsers will block API calls if CORS is misconfigured
+- **Resolution:** Implement strict origin validation and OPTIONS preflight handling
+
+---
+
 ## 0.1 AI Build Pack (Quick Reference)
 
 > **For AI coding agents:** This section provides authoritative references and blockers before implementation.
@@ -29,6 +54,8 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 | OpenAPI Spec (`openapi.yaml`) | ✅ Ready | `1. Research/openapi.yaml` |
 | Wireframes/Mockups | 🟡 Recommended | Figma link TBD |
 | This SRS | ✅ Ready | Current document |
+
+**Status Note:** OpenAPI v1.0.2 is complete with all required endpoints including OAuth integration (`/v1/oauth/google/connect`, `/v1/oauth/google/callback`, DELETE `/v1/me/workspace`), typed error details, input validation constraints, CORS preflight contract, and consistent `requestId` fields across all responses. v1.0.2 fixes critical implementability issue with OAuth connect endpoint (now public with session cookie binding).
 
 **⚠️ OpenAPI Governance Rule:** Agents MUST use `openapi.yaml` as the single source of truth for API contracts. Any discrepancies between this SRS and the OpenAPI spec should be resolved by updating BOTH documents. See Section 6.0 for contract governance rules.
 
@@ -49,8 +76,12 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 
 ### Open Questions (Resolve Before Phase 2)
 1. ~~OpenAPI spec location~~ → Resolved: `1. Research/openapi.yaml` exists and governs Section 6.2
-2. ~~Wireframes/mockups~~ → Minimal set required for error states, empty states
-3. Backend readiness: Confirm `/v1/search`, `/v1/chat`, `/v1/feedback` endpoints are deployed
+2. ~~Wireframes/mockups~~ → Resolved: Minimal set required for error states, empty states
+3. ~~OAuth flow details~~ → Resolved: Now specified in Section 16.1.1 (BLOCKER - must add to OpenAPI)
+4. ~~Token storage security~~ → Resolved: Now specified in Sections 3.4.1, 7.3.8, 16.1.2 (BLOCKER)
+5. Backend readiness: Confirm `/v1/search`, `/v1/chat`, `/v1/feedback` endpoints are deployed
+6. **Rate limit exact values** (Issue #14): Current values in Section 6.5 are recommended defaults; confirm or adjust
+7. **HTTP 200 vs 207 for partial success** (Issue #13): Section 6.0.3 defines deterministic rule; confirm backend will follow
 
 ### Critical Implementation Notes
 - **SSE Streaming (Post-MVP):** Streaming is deferred to post-MVP. When implemented, cannot use `EventSource` (no Authorization header support). Must use `fetch()` + `ReadableStream`. See Section 6.2.4.
@@ -196,15 +227,22 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
-def get_cors_origin(request):
-    origin = request.headers.get("Origin")
-    if origin in ALLOWED_ORIGINS:
-        return origin
-    # Allow Netlify preview deployments
-    if origin and origin.endswith(".netlify.app"):
-        return origin
+# Validate origin against allowlist (see Section 3.3.1 for complete rules)
+def validate_origin(origin: str, environment: str) -> str | None:
+    if environment == 'production':
+        # Production: exact match only
+        if origin in ['https://vnlaw.app', 'https://staging.vnlaw.app']:
+            return origin
+    elif environment == 'preview':
+        # Preview: restricted pattern or allowlist
+        if origin and origin.startswith('https://') and origin.endswith('-vnlaw-app.netlify.app'):
+            return origin
+        if origin in ['http://localhost:5173', 'http://localhost:3000']:
+            return origin
     return None  # Reject unknown origins
 ```
+
+**Note:** Detailed CORS security policy is specified in Section 3.3.1 below. The above is a simplified reference for implementation.
 
 **Required Headers:**
 - `Access-Control-Allow-Origin`: Echo validated origin (NOT wildcard)
@@ -215,6 +253,48 @@ def get_cors_origin(request):
 
 Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight; backend MUST handle `OPTIONS` requests.
 
+#### 3.3.1 CORS Security Policy
+
+##### Production Environment
+- **Allowed origins:** Exact match only
+  - `https://vnlaw.app` (production)
+  - `https://staging.vnlaw.app` (staging)
+- **Forbidden:** Wildcard patterns like `*.netlify.app` (Issue #7)
+- **Rationale:** Over-broad patterns allow malicious sites hosted on the same platform to attempt cross-origin calls
+
+##### Preview Environment (Development/PR)
+- **Allowed origins:**
+  - `https://*-vnlaw-app.netlify.app` (restricted pattern for PR previews)
+  - OR: Firestore allowlist of approved preview URLs (more restrictive)
+  - `http://localhost:5173`, `http://localhost:3000` (local development)
+- **Security note:** Never use unrestricted `*.netlify.app` in production
+
+##### Preflight Handling (OPTIONS)
+All API routes MUST respond to `OPTIONS` requests with:
+- `Access-Control-Allow-Origin`: validated origin (echoed from request)
+- `Access-Control-Allow-Methods`: `GET, POST, DELETE, OPTIONS`
+- `Access-Control-Allow-Headers`: `Authorization, Content-Type, X-Session-Id, X-Request-Id`
+- `Access-Control-Max-Age`: `86400` (24 hours)
+
+See Section 6.2.0 for detailed preflight requirements.
+
+##### Credentials
+- `Access-Control-Allow-Credentials`: NOT used (tokens in Authorization header only)
+- No cookies or session cookies relied upon for API authentication
+- All authentication via Bearer token (Kinde JWT)
+
+##### Implementation Note
+- CORS validation MUST happen at the edge (Cloudflare Worker or Cloud Run ingress) before request reaches application logic
+- Origin validation MUST use exact string matching (NOT regex suffix matching)
+- Rejected origins MUST be logged as security events (see Section 7.5.3)
+
+**Acceptance:**
+- Production does not accept arbitrary Netlify origins
+- Preview/staging origin rules are explicit and documented
+- CORS and CSP policies align (same allowed origins)
+
+**References:** Consolidated Review Issues #6, #7
+
 ### 3.4 Firestore (MVP persistence)
 **Why selected**
 - Already in use for token storage and session-like state.
@@ -223,6 +303,63 @@ Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight; backend 
 **Role**
 - Stores `UserTokens` (Google OAuth tokens keyed by user email).
 - Stores sessions/conversation metadata for MVP (optional but recommended).
+
+#### 3.4.1 UserTokens Collection Security (BLOCKER - Issue #5)
+
+> ⚠️ **CRITICAL BLOCKER:** Token storage security must be implemented before storing any OAuth tokens in production.
+
+##### Schema
+```typescript
+interface UserTokenDocument {
+  kindeUserId: string;           // Primary key (document ID)
+  email: string;                 // For verification (matches Kinde email)
+  encryptedRefreshToken: string; // KMS-encrypted
+  encryptedAccessToken: string;  // KMS-encrypted
+  kmsKeyVersion: string;         // For rotation tracking
+  scopes: string[];              // OAuth scopes granted (e.g., ["https://www.googleapis.com/auth/cloud_search"])
+  expiresAt: Timestamp;          // Access token expiry
+  updatedAt: Timestamp;
+  createdAt: Timestamp;
+}
+```
+
+##### Encryption Requirements
+- **Envelope encryption with Cloud KMS** for `refreshToken` and `accessToken`
+  - Use dedicated KMS key: `projects/{project}/locations/global/keyRings/vnlaw-tokens/cryptoKeys/oauth-tokens`
+  - Encrypt before write, decrypt on read
+  - Never log plaintext tokens (see Section 7.5.3)
+- **Key rotation:** Track `kmsKeyVersion` to support key rotation without breaking existing tokens
+
+##### Access Control
+- **Firestore Security Rules:** DENY all client access to `UserTokens` collection
+- **Service Account Access:** Only backend service accounts with IAM role `roles/datastore.user`
+- **Principle:** UserTokens is backend-only; no direct client access ever
+
+##### Audit & Revocation
+- **Audit Logging:** Enable Cloud Audit Logs for Firestore Data Access
+  - Log: who accessed which document, when, and correlation with requestId
+  - Retention: 90 days minimum (compliance requirement)
+- **Revocation:**
+  - DELETE `/v1/me/workspace` MUST delete the UserTokens document
+  - Revoke tokens with Google OAuth API before deleting Firestore document
+  - Log revocation events as security events
+
+##### Implementation Checklist
+Before storing any OAuth tokens in production:
+- [ ] KMS key created and IAM permissions configured
+- [ ] Firestore security rules deployed (deny all client access)
+- [ ] Backend token encryption/decryption implemented and tested
+- [ ] Audit logging enabled and verified
+- [ ] Revocation endpoint implemented and tested
+- [ ] No plaintext tokens in logs (verified via log inspection)
+
+**Acceptance:**
+- Tokens stored in Firestore are ciphertext only (verify by reading raw document)
+- Client cannot access UserTokens collection (verified by security rules test)
+- Token access appears in audit logs with requestId correlation
+- Revocation deletes tokens and is logged
+
+**References:** Consolidated Review Issue #5, Sections 7.3.8 and 16.1.2
 
 ### 3.5 PostgreSQL (Supabase or Neon) — Post-MVP or selective MVP
 **Why selected**
@@ -308,7 +445,70 @@ If Workspace scope is requested and Google tokens are unavailable:
 **FR-AUTH-02 Domain restriction:** The app shall only allow users with email domain `vnlaw.com.vn`.
 **FR-AUTH-03 Session persistence:** The app shall maintain a session across page reloads using Kinde SDK's silent refresh mechanism. Access tokens remain in memory (not localStorage); session persistence is achieved via secure session cookie managed by Kinde SDK.
 **FR-AUTH-04 API auth:** The app shall send Kinde access tokens to the backend in `Authorization: Bearer <token>`.
-**FR-AUTH-05 Google token linking (Workspace):** For Workspace features, the app shall detect if the backend indicates missing Google OAuth credentials and shall redirect the user to the backend-provided `connectUrl` to complete Google OAuth and link the credential to the current Kinde session.
+**FR-AUTH-05 Google Workspace Token Linking:**
+
+For Workspace features, the app shall detect if the backend indicates missing Google OAuth credentials and shall redirect the user to the backend-provided `connectUrl` to complete Google OAuth and link the credential to the current Kinde session.
+
+**OAuth Security Requirements (Issues #2, #3, #4):**
+
+**Authorization Code Flow with PKCE:**
+- **Flow type:** Authorization Code (NOT implicit)
+- **PKCE:** REQUIRED (even for confidential client)
+  - Backend generates `code_verifier` (43-128 chars, cryptographically random)
+  - Backend computes `code_challenge` = BASE64URL(SHA256(code_verifier))
+  - Backend sends `code_challenge` and `code_challenge_method=S256` to Google
+  - Backend validates `code_verifier` on callback
+
+**State Token Security:**
+- **Generation:** Cryptographically strong random (e.g., `crypto.randomUUID()` + additional entropy)
+- **Storage:** Backend short-lived store (Firestore with TTL or Redis)
+- **TTL:** 10 minutes maximum
+- **One-time use:** State consumed and deleted on callback
+- **Binding:** State document MUST include:
+  ```typescript
+  {
+    stateToken: string;
+    kindeUserId: string;        // Session binding (prevents CSRF)
+    redirectUrl: string;         // Validated return URL
+    pkceVerifierHash: string;    // For PKCE validation
+    createdAt: Timestamp;
+    expiresAt: Timestamp;
+  }
+  ```
+
+**Redirect URL Validation (Open Redirect Prevention):**
+- **Allowlist enforcement:** Backend MUST validate `redirect` parameter against strict allowlist
+- **Production allowlist:**
+  - `https://vnlaw.app/workspace`
+  - `https://staging.vnlaw.app/workspace`
+- **Preview allowlist:** Environment-specific (see Section 13.2)
+- **Rejection:** Invalid redirects return HTTP 400 with error logged as security event
+
+**Identity Verification (Token Misbinding Prevention):**
+- **On callback:** Backend MUST verify Google account email matches Kinde user email
+- **Mismatch behavior:**
+  - Refuse to store tokens
+  - Return error: "Wrong Google account selected. Please authorize with {expectedEmail}"
+  - Redirect back to app with error status
+- **Rationale:** Prevents linking bob@vnlaw.com.vn's Google tokens to alice@vnlaw.com.vn's app account
+
+**Callback Validation Sequence:**
+1. Validate `state` token (exists, not expired, not already used)
+2. Validate PKCE `code_verifier` matches stored challenge
+3. Validate `state` binding (matches current Kinde user session)
+4. Exchange `code` for tokens with Google
+5. Verify Google account email matches Kinde user email
+6. Store encrypted tokens in Firestore UserTokens (see Section 3.4.1)
+7. Delete state token (one-time use)
+8. Redirect to validated `redirectUrl` with success indicator
+
+**Acceptance Criteria:**
+- Cannot replay state token (one-time use enforced)
+- Cannot link wrong Google account to Kinde user
+- Cannot redirect to arbitrary external site
+- All OAuth security violations logged as security events (see Section 7.5.3)
+
+**Implementation Note:** See Section 16.1.1 for complete OAuth endpoint specifications (fully documented in OpenAPI v1.0.2).
 **FR-AUTH-06 Session timeout:** The app shall attempt silent token refresh before expiry; on failure, prompt re-login and return to the previous route after successful re-authentication.
 
 **Implementation Note:** Do NOT store access tokens in localStorage. Rely on Kinde SDK's built-in session management for security. See Section 8.1 for state storage details.
@@ -332,7 +532,7 @@ If Workspace scope is requested and Google tokens are unavailable:
 
 #### 5.3.1 Citation Rendering Rules (FR-CHAT-03 Details)
 
-**Deduplication:** Citations with identical URLs SHALL be deduplicated; display only the first occurrence.
+**Deduplication:** Backend deduplicates citations before returning response (see Section 6.2.9). Frontend displays citations exactly as provided by the API without additional deduplication.
 
 **Ordering:** Citations appear in order of first mention/return from the API (preserve API order).
 
@@ -354,8 +554,9 @@ If Workspace scope is requested and Google tokens are unavailable:
 **FR-WS-05 Post-connect verification:** After Google OAuth callback returns to the app, the frontend SHALL call `/v1/me` to verify `workspace.connected === true` before updating the UI to show "Connected" status. If verification fails, show error message with retry option.
 
 **OAuth Return Handling:**
-- Backend redirects to `/settings?workspace_connected=1` (or configured return URL) after successful OAuth.
-- Frontend detects query parameter and calls `/v1/me` to confirm connection status.
+- Backend redirects to `/workspace?status=connected` (or configured return URL) after successful OAuth.
+- Frontend detects query parameter `status=connected` and calls `/v1/me` to confirm connection status.
+- On confirmation success, show "Google Workspace Connected" message.
 - On confirmation failure, show "Connection verification failed. Please try again." with retry button.
 
 ### 5.5 Feedback
@@ -428,10 +629,31 @@ All non-2xx responses MUST use this schema (see Section 6.3 for full error codes
 | 500 | `INTERNAL_ERROR` | Backend error |
 | 502 | `UPSTREAM_ERROR` | Dependency failure |
 | 503 | `SERVICE_UNAVAILABLE`, `DATASTORE_UNAVAILABLE` | Temporary unavailable |
-| 504 | `SEARCH_TIMEOUT` | Request timeout |
-| 200/207 | (success with `status: "partial"`) | Partial success, check `datastoreStatus` |
+| 504 | `SEARCH_TIMEOUT`, `REQUEST_TIMEOUT` | Request timeout |
+| 200 | (success) | All requested operations succeeded |
+| 207 | (partial success) | Mixed success/failure across datastores |
 
-**Partial Success Clarification:** HTTP 200 or 207 with `SearchResponse.status = "partial"` is a **success response**, not an error response. The response body follows `SearchResponse` schema, not `APIErrorResponse`. Frontend should display available results with a warning banner. There is no `SEARCH_PARTIAL_FAILURE` error code.
+**Partial Success (200 vs 207) - Deterministic Rule (Issue #13):**
+
+Use HTTP **207 Multi-Status** when:
+- Some datastores succeeded AND some failed
+- `datastoreStatus` contains mixed success/error states
+
+Use HTTP **200 OK** when:
+- All requested datastores succeeded (even if warnings present)
+- Single-datastore queries that succeed
+
+**Examples:**
+- Query `precedent` + `workspace`: precedent succeeds, workspace fails → **207**
+- Query `precedent` only: succeeds → **200**
+- Query `precedent` + `workspace`: both succeed → **200**
+
+**Frontend behavior on 207:**
+- Display available results with warning banner
+- List failed datastores using `response.datastoreStatus[scope].error`
+- Example: "⚠️ Workspace search unavailable. Google Workspace not connected."
+
+**Schema Note:** Both 200 and 207 return `SearchResponse` or `ChatResponse` schema, NOT `APIErrorResponse`. There is no `SEARCH_PARTIAL_FAILURE` error code.
 
 #### 6.0.4 Sample JSON Files (Recommended)
 
@@ -460,6 +682,34 @@ These samples reduce ambiguity and prevent field name mismatches.
 ### 6.2 API Interface (Cloud Run BFF) — v1
 **Versioning:** All endpoints are under `/v1`.
 
+#### 6.2.0 CORS Preflight Handling
+
+All endpoints MUST support `OPTIONS` method for CORS preflight requests.
+
+**OPTIONS Response Headers:**
+```http
+Access-Control-Allow-Origin: {validated-origin}
+Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS
+Access-Control-Allow-Headers: Authorization, Content-Type, X-Session-Id, X-Request-Id
+Access-Control-Max-Age: 86400
+```
+
+**Security:**
+- Origin validation per Section 3.3.1 (production vs preview rules)
+- Reject unrecognized origins with 403 Forbidden
+- Log rejected origins as security events (see Section 7.5.3)
+
+**Implementation Note:**
+- Preflight handling typically implemented at gateway/middleware level, not per-route
+- CORS validation MUST happen before authentication (OPTIONS requests don't include auth headers)
+- Preflight responses don't require `Authorization` header
+
+**Acceptance:**
+- SPA can call all endpoints from allowed origins without CORS errors
+- Rejected origins return 403 and are logged
+
+**Reference:** Consolidated Review Issue #6
+
 #### 6.2.1 Headers
 
 **Required Headers (all endpoints except `/v1/health`):**
@@ -472,13 +722,29 @@ These samples reduce ambiguity and prevent field name mismatches.
 #### 6.2.1.1 Common Response Fields
 
 **Request Identifiers:**
-| Field | Format | Description |
-|-------|--------|-------------|
-| `requestId` | UUID v4 | Unique identifier generated by backend for each API call. Used for tracing and support. |
-| `conversationId` | `conv_<random>` | Identifier for a chat conversation. Persists across messages in a conversation. |
-| `messageId` | `msg_<random>` | Unique identifier for an assistant message. Use for feedback submission. |
+| Field | Format | Description | Required |
+|-------|--------|-------------|----------|
+| `requestId` | UUID v4 | Backend-generated unique identifier for this request | **MANDATORY** |
+| `conversationId` | UUID v4 | Identifier for a chat conversation (persists across messages) | Conditional |
+| `messageId` | UUID v4 | Unique identifier for an assistant message (for feedback) | Conditional |
 
-**Important:** `requestId` MUST be a valid UUID v4 string and MUST be unique per API request. Frontend should display `requestId` for all errors to enable support investigations.
+**requestId (MANDATORY - Issue #10):**
+- **Type:** `string` (UUID v4)
+- **Source:** Backend-generated unique identifier for this request
+- **Required:** EVERY response (success and error) MUST include `requestId`
+- **Purpose:** Support, tracing, debugging
+- **Display:** Frontend MUST show `requestId` to user in error states (see Section 7.5.4)
+- **Correlation:** If client sends `X-Request-Id` header, backend SHOULD log both for correlation (but always returns backend-generated `requestId` in response body)
+
+**Example Response:**
+```json
+{
+  "requestId": "7f3e4d2c-1a9b-4c5e-8f6d-2b3c4d5e6f7a",
+  "data": { ... }
+}
+```
+
+**Acceptance:** Every API call (including errors) returns `requestId` in JSON body.
 
 **ID Clarification:**
 - `X-Request-Id` (header): Client-generated UUID, sent with request for client-side correlation
@@ -561,6 +827,23 @@ Response (success):
 **Field Notes:**
 - `datastoreStatus.resultCount`: Total matches in that datastore (may be approximate), not results returned in this page. Use for "X results found" display.
 
+**Input Validation (Issue #19):**
+
+Request body constraints:
+- `query`: REQUIRED, string, `1 <= length <= 500`
+- `scope`: REQUIRED, string, one of: `precedent`, `infobank`, `both`, `workspace`
+- `pageSize`: OPTIONAL, integer, `1 <= value <= 50` (default: 10)
+- `cursor`: OPTIONAL, string, `maxLength: 2048`
+
+Validation errors:
+- Query too long: `QUERY_TOO_LONG` (HTTP 400) - "Query exceeds 500 characters"
+- Query empty: `VALIDATION_ERROR` (HTTP 400) - "Query is required"
+- Invalid scope: `VALIDATION_ERROR` (HTTP 400) - "Invalid scope value"
+- Invalid cursor: `VALIDATION_ERROR` (HTTP 400) - "Invalid or expired cursor"
+
+**Security:**
+Server-side validation is authoritative; client-side validation is UX only. Oversized inputs MUST be rejected to prevent DoS.
+
 #### 6.2.3 POST `/v1/chat`
 Request:
 ```json
@@ -611,6 +894,23 @@ Response:
 - `messageId`: Unique identifier for this assistant response. Use this ID when submitting feedback via `/v1/feedback`.
 - `contextLimitWarning`: If `true`, the conversation history was **truncated** due to LLM context window limits. Frontend SHOULD display a warning: "Long conversation — some earlier context may have been trimmed."
 
+**Input Validation (Issue #19):**
+
+Request body constraints:
+- `message`: REQUIRED, string, `1 <= length <= 4000`
+- `conversationId`: OPTIONAL, string (UUID v4 format)
+- `scope`: REQUIRED, string, one of: `precedent`, `infobank`, `both`, `workspace`
+- `messages`: OPTIONAL, array, `maxLength: 50` (conversation history)
+
+Validation errors:
+- Message too long: `VALIDATION_ERROR` (HTTP 400) with `details.field = "message"` - "Message exceeds 4000 characters"
+- Message empty: `VALIDATION_ERROR` (HTTP 400) - "Message is required"
+- Invalid scope: `VALIDATION_ERROR` (HTTP 400) - "Invalid scope value"
+- Invalid conversationId format: `VALIDATION_ERROR` (HTTP 400) - "Invalid conversation ID format"
+
+**Security:**
+Server-side validation is authoritative; prevents DoS via oversized payloads. Client-side validation for UX only.
+
 #### 6.2.4 POST `/v1/chat/stream` — POST-MVP (Deferred)
 
 **Status:** ❌ Not implemented for MVP. Streaming will be added post-MVP when frontend is stable.
@@ -645,6 +945,7 @@ Returns current user status including Workspace connection state.
 Response:
 ```json
 {
+  "requestId": "7f3e4d2c-1a9b-4c5e-8f6d-2b3c4d5e6f7a",
   "email": "user@vnlaw.com.vn",
   "name": "string|null",
   "picture": "string|null",
@@ -667,6 +968,7 @@ Returns feature flags for the current user/environment.
 Response:
 ```json
 {
+  "requestId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "flags": {
     "WORKSPACE_SEARCH_ENABLED": false,
     "CHAT_HISTORY_ENABLED": false,
@@ -688,6 +990,7 @@ Returns backend health and dependency status (no sensitive details).
 Response:
 ```json
 {
+  "requestId": "health-check-uuid-v4",
   "status": "healthy|degraded|unhealthy",
   "version": "1.0.0",
   "timestamp": "2025-12-23T10:00:00Z",
@@ -698,7 +1001,48 @@ Response:
 }
 ```
 
-#### 6.2.9 Canonical Result Model
+#### 6.2.9 Citation Handling (Issue #9)
+
+**Critical Rule:** Backend MUST deduplicate citations BEFORE returning response.
+
+**Rationale:** LLM may reference citations by positional index (e.g., "[1]", "[2]") in the answer text. If frontend deduplicates citations, indices will shift and break the references.
+
+**Backend Deduplication Logic:**
+- Deduplicate by `(title, url)` tuple
+- Preserve first occurrence
+- If answer text contains index-based references, update indices after deduplication
+
+**Recommended: Stable Citation IDs**
+
+Instead of positional indices `[1]`, use stable citation IDs:
+
+```json
+{
+  "citations": [
+    {
+      "id": "cit_abc123",
+      "title": "Decision 123/2024",
+      "url": "https://...",
+      "source": "precedent"
+    }
+  ],
+  "answer": "According to <cite id=\"cit_abc123\">Decision 123/2024</cite>, the principle is..."
+}
+```
+
+**Frontend Responsibility:**
+- Display citations exactly as backend provides (no client-side dedup)
+- Render citation references from answer text
+- If using stable IDs, match by `id` field
+
+**Acceptance:**
+- Citation references in answer always map correctly to citation list
+- No index mismatches between answer text and citation panel
+- Frontend does not perform deduplication logic
+
+**Reference:** Consolidated Review Issue #9
+
+#### 6.2.10 Canonical Result Model
 
 **Purpose:** Ensure consistent field mapping between Discovery Engine responses and frontend expectations.
 
@@ -775,6 +1119,7 @@ All endpoints return errors in the following format (see Section 6.0.2 for gover
 | `QUERY_TOO_LONG` | 400 | Query exceeds max length | No |
 | `RATE_LIMITED` | 429 | Too many requests; check `Retry-After` header | Yes (1x) |
 | `SEARCH_TIMEOUT` | 504 | Search operation timed out | Yes (2x) |
+| `REQUEST_TIMEOUT` | 504 | Request timed out (search or chat) | Yes (2x) |
 | `UPSTREAM_ERROR` | 502 | Dependency (Discovery Engine, etc.) failed | Yes (2x) |
 | `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable | Yes (3x) |
 | `DATASTORE_UNAVAILABLE` | 503 | Specific datastore unavailable | Yes (3x) |
@@ -797,6 +1142,49 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 }
 ```
 
+#### 6.3.1 Error Response Polymorphism (Issue #8)
+
+While the standard error schema uses `details: object`, certain error codes have **typed** `details` structures that MUST be implemented consistently:
+
+##### AUTH_GOOGLE_DISCONNECTED
+
+When `error.code === "AUTH_GOOGLE_DISCONNECTED"`, the `details` field MUST contain:
+
+```typescript
+{
+  code: "AUTH_GOOGLE_DISCONNECTED",
+  message: "Google Workspace not connected",
+  details: {
+    connectUrl: string;        // REQUIRED: OAuth initiation URL
+    requiredScopes?: string[]; // OPTIONAL: If re-consent needed
+  },
+  requestId: string,
+  retryable: false
+}
+```
+
+**OpenAPI Requirement:**
+This MUST be modeled in OpenAPI using `oneOf` or `discriminator` on `error.code` to enable type-safe client generation. The goal is to eliminate runtime "cast to any" in frontend error handling.
+
+**Example OpenAPI Schema:**
+```yaml
+ErrorResponse:
+  oneOf:
+    - $ref: '#/components/schemas/GenericError'
+    - $ref: '#/components/schemas/AuthGoogleDisconnectedError'
+  discriminator:
+    propertyName: code
+    mapping:
+      AUTH_GOOGLE_DISCONNECTED: '#/components/schemas/AuthGoogleDisconnectedError'
+```
+
+**Acceptance:**
+- TypeScript client generated from OpenAPI guarantees `connectUrl` exists for `AUTH_GOOGLE_DISCONNECTED`
+- No runtime type casting required in frontend error handling
+- IDE autocomplete works for error.details based on error.code
+
+**Reference:** Consolidated Review Issue #8
+
 ### 6.4 Error Code → UX Mapping
 
 | Error Code | User Message | Recommended Action | Auto-Retry |
@@ -806,6 +1194,7 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 | `AUTH_GOOGLE_DISCONNECTED` | "Connect your Google Workspace to search internal documents." | Show "Connect" button with `connectUrl` | No |
 | `RATE_LIMITED` | "Too many requests. Please wait a moment." | Show countdown timer using `Retry-After` | Yes (1x) |
 | `SEARCH_TIMEOUT` | "Search is taking longer than expected. Please try again." | Show "Retry" button | Yes (2x) |
+| `REQUEST_TIMEOUT` | "Request timed out. Please try again." | Show "Retry" button (applies to search & chat) | Yes (2x) |
 | `UPSTREAM_ERROR` | "A required service is temporarily unavailable." | Show "Retry" button | Yes (2x) |
 | `SERVICE_UNAVAILABLE` | "Service temporarily unavailable. Retrying..." | Auto-retry with indicator | Yes (3x) |
 
@@ -817,12 +1206,53 @@ For `AUTH_GOOGLE_DISCONNECTED`:
 
 **Partial Success UX (not an error):** When `SearchResponse.status === "partial"`, display: "Some results may be missing. Showing available results." Show results with warning banner. Check `datastoreStatus` for details on which datastores failed.
 
-### 6.5 Rate limiting headers
-All API responses include:
-- `X-RateLimit-Limit`
-- `X-RateLimit-Remaining`
-- `X-RateLimit-Reset` (Unix epoch seconds)
-- `Retry-After` (on 429, in seconds)
+### 6.5 Rate Limiting (Issue #14)
+
+##### Scope & Limits
+
+**Authenticated endpoints** (`/v1/search`, `/v1/chat`, `/v1/feedback`, `/v1/me`):
+- **Limit:** 60 requests per minute per authenticated user (Kinde user ID)
+- **Burst allowance:** 10 requests (allows brief spikes)
+- **Scope:** Per-user (not per-IP), keyed by Kinde user ID from token
+
+**Health endpoint** (`/v1/health`):
+- **Limit:** 10 requests per minute per IP address
+- **Scope:** Per-IP (unauthenticated endpoint)
+
+**OAuth endpoints** (when implemented, see Section 16.1.1):
+- **Limit:** 5 requests per minute per IP (prevents abuse)
+- **Scope:** Per-IP (during auth flow, before full authentication)
+
+##### Headers (RFC 6585)
+
+All responses include:
+```http
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 42
+X-RateLimit-Reset: 1735141920
+```
+
+On 429 Too Many Requests:
+```http
+Retry-After: 37
+```
+
+**Important:** All values in seconds (NOT milliseconds). `X-RateLimit-Reset` is Unix epoch timestamp.
+
+##### Frontend Behavior
+
+See Section 6.6 (Retry UX Canon) for countdown timer and circuit breaker logic.
+
+##### Implementation
+
+- **Enforcement location:** Cloudflare edge (preferred) or Cloud Run middleware
+- **Counter storage:** Cloudflare KV or Redis with sliding window algorithm
+- **Granularity:** Per-minute sliding window (not fixed-window to avoid thundering herd)
+
+**Acceptance:**
+- Rate limits enforced consistently across all endpoints
+- Headers present in all responses (including non-429)
+- 429 responses include `Retry-After` header
 
 ### 6.6 Retry UX Canon
 
@@ -967,7 +1397,164 @@ Demo Mode (`VITE_DEMO_MODE=true`) uses MSW to intercept all API calls. This is d
 - Add CI check: `if [[ "$VITE_ENV" == "production" && "$VITE_DEMO_MODE" == "true" ]]; then exit 1; fi`
 - Demo Mode banner MUST be visible when active
 
-#### 7.3.8 Recent Searches Privacy
+#### 7.3.8 OAuth Token Storage Security (BLOCKER - Issue #5)
+
+> ⚠️ **CRITICAL:** See Section 3.4.1 for complete UserTokens security requirements.
+
+**Summary of mandatory controls:**
+1. **Envelope encryption with Cloud KMS** (non-negotiable)
+   - All OAuth tokens MUST be encrypted before storage in Firestore
+   - Use dedicated KMS key: `vnlaw-tokens/oauth-tokens`
+2. **Firestore security rules** deny all client access to UserTokens collection
+3. **Audit logging** enabled for all token access (Cloud Audit Logs for Firestore)
+4. **Revocation capability** via DELETE `/v1/me/workspace` (see Section 16.1.1)
+5. **Never log plaintext tokens** (see Section 7.5.3)
+
+**Acceptance:**
+- Tokens never readable in plaintext by unauthorized principals
+- Token reads are auditable with requestId correlation
+- Revocation is possible and tested
+- Production logs do not contain plaintext tokens
+
+**References:** Sections 3.4.1, 16.1.2, Consolidated Review Issue #5
+
+#### 7.3.9 Token Persistence Edge Cases (Issue #23)
+
+This section documents edge case behaviors for Kinde authentication tokens and Google OAuth tokens to ensure consistent UX.
+
+##### Kinde Token Expiry (Session Timeout)
+**Scenario:** User's Kinde access token expires during active session (TTL typically 1 hour).
+
+**Expected Behavior:**
+1. Kinde SDK automatically attempts silent refresh via refresh token
+2. If refresh succeeds: seamless continuation (user unaware)
+3. If refresh fails (refresh token expired/revoked):
+   - Redirect user to login page
+   - Show message: "Your session has expired. Please log in again."
+   - Clear all in-memory auth state
+
+**Implementation Note:**
+Kinde SDK handles refresh automatically. Frontend should listen to SDK auth state changes and handle logout events.
+
+##### Browser Tab Close/Reopen (Session Restoration)
+**Scenario:** User closes browser tab/window and reopens later.
+
+**Expected Behavior:**
+1. Kinde SDK checks for valid refresh token (stored in secure HTTP-only cookie)
+2. If refresh token valid: silent refresh succeeds, user stays logged in
+3. If refresh token expired: redirect to login page
+4. **X-Session-Id regeneration:** New tab = new session ID (sessionStorage is per-tab)
+
+**Acceptance:**
+- User can close/reopen tab and remain logged in (within refresh token TTL, typically 30 days)
+- X-Session-Id is unique per tab instance (not preserved across tab close/reopen)
+
+##### Browser Crash/Restore
+**Scenario:** Browser crashes, user restores session (most browsers offer "Restore tabs" on restart).
+
+**Expected Behavior:**
+- Same as tab close/reopen scenario above
+- If multiple tabs restored, each gets new unique X-Session-Id
+
+##### Google OAuth Token Expiry (Access Token)
+**Scenario:** Google Workspace access token expires (TTL = 1 hour) while user is using workspace search.
+
+**Expected Behavior:**
+1. Backend detects 401 from Google Cloud Search API
+2. Backend attempts refresh using stored Google refresh token
+3. If refresh succeeds:
+   - Update `UserTokens` Firestore document with new access token
+   - Retry the failed API call
+   - User unaware (seamless)
+4. If refresh fails (refresh token revoked/expired):
+   - Return `AUTH_GOOGLE_DISCONNECTED` error to frontend
+   - Frontend shows "Google Workspace connection expired. Please reconnect." with connect button
+   - User clicks button → initiate OAuth flow again
+
+**Acceptance:**
+- Access token refresh is transparent to user
+- Refresh token expiry/revocation triggers graceful re-auth prompt
+- User can reconnect without losing other app state (search history, UI state)
+
+##### Google OAuth Token Revocation (User-Initiated)
+**Scenario:** User revokes app access via Google Account settings (outside the app).
+
+**Expected Behavior:**
+1. Next workspace search attempt: Google API returns 401/403
+2. Backend detects revocation, deletes `UserTokens` document
+3. Return `AUTH_GOOGLE_DISCONNECTED` to frontend
+4. Frontend shows "Google Workspace access was revoked. Please reconnect to continue using workspace search."
+
+**Acceptance:**
+- External revocation detected within one API call
+- No error loops (backend cleans up on detection)
+- User can reconnect immediately
+
+##### Long Idle Period (Both Tokens Expired)
+**Scenario:** User leaves app open for multiple days without interaction.
+
+**Expected Behavior:**
+1. Kinde refresh token expires (typically 30 days) → user logged out
+2. On next interaction: redirect to login page
+3. After re-login: Google Workspace connection state preserved (UserTokens doc still exists if Google tokens haven't expired)
+4. If Google tokens also expired: backend refreshes them transparently on first workspace search
+
+**Acceptance:**
+- User must re-authenticate to Kinde after extended idle
+- Google Workspace connection survives Kinde re-auth (doesn't require OAuth again unless Google tokens also expired)
+
+##### Network Failure During OAuth Callback
+**Scenario:** Network drops during Google OAuth callback (after user approves, before backend stores tokens).
+
+**Expected Behavior:**
+1. User redirected back to app with `?error=network_error`
+2. Frontend shows "Connection failed during Google Workspace setup. Please try again."
+3. State token already consumed (one-time use), so retry requires new OAuth initiation
+4. User clicks "Try Again" → starts fresh OAuth flow
+
+**Acceptance:**
+- No partial state (tokens not stored if callback fails)
+- User can retry immediately
+- No security issues (state token not reusable)
+
+##### Concurrent Tab OAuth (Race Condition)
+**Scenario:** User opens multiple tabs, initiates OAuth in both tabs simultaneously.
+
+**Expected Behavior:**
+1. Each tab gets unique `state` token (backend creates separate state docs)
+2. Google OAuth redirects to the tab that completed authorization first
+3. Backend stores tokens for first successful callback
+4. Second tab's callback (if it completes):
+   - Different state token → validates successfully
+   - Backend updates `UserTokens` document (overwrites with latest tokens)
+   - Both tabs eventually show "connected" (via `/v1/me` polling)
+
+**Edge Case:** If both callbacks arrive nearly simultaneously, last-write-wins (Firestore document overwrite). This is acceptable since both tokens are for the same user+Google account.
+
+**Acceptance:**
+- No crashes or errors from concurrent OAuth
+- Both tabs eventually reflect connected state
+- Latest tokens stored (no corruption)
+
+##### Implementation Guidance
+**Testing Requirements:**
+- Simulate token expiry (mock short TTLs)
+- Test browser dev tools "Offline" mode during OAuth
+- Test multi-tab scenarios manually
+- Use Firestore emulator for token storage testing
+
+**Monitoring:**
+- Log token refresh failures (Google and Kinde) with reason codes
+- Alert on high rate of `AUTH_GOOGLE_DISCONNECTED` errors (may indicate systemic issue)
+- Track OAuth abandonment rate (users who start OAuth but don't complete)
+
+**User Support:**
+- Include token edge case scenarios in user documentation
+- Provide "Clear cache and reconnect" troubleshooting step for persistent issues
+
+**References:** Consolidated Review Issue #23
+
+#### 7.3.10 Recent Searches Privacy
 
 Storing recent searches in localStorage can expose sensitive legal queries:
 - Store only **query preview** (first 50 chars) or **hash** of full query
@@ -982,9 +1569,40 @@ Storing recent searches in localStorage can expose sensitive legal queries:
 
 #### 7.5.1 Client-Side Identifiers
 
-- **Session ID:** Generate `X-Session-Id` on app load; persist in sessionStorage; send on every API request
-- **Request ID:** Generate `X-Request-Id` (UUID) for each API call; include in logs and display for errors
+**X-Session-Id (Issue #18):**
+- **Format:** UUID v4 (`crypto.randomUUID()`)
+- **Lifecycle:** Per browser tab (stored in `sessionStorage`)
+- **Entropy:** Minimum 122 bits (UUID v4 standard)
+- **Collision handling:**
+  - Backend SHOULD detect improbable collisions (same session ID for different users)
+  - On collision: reject with HTTP 400 and log as security event
+- **Privacy:**
+  - Do NOT log raw session IDs in production logs
+  - Log `SHA-256(sessionId)` if correlation needed
+- **Purpose:** Track user actions within a single browser session for UX analytics and support
+
+**Implementation:**
+```typescript
+// On app init
+let sessionId = sessionStorage.getItem('sessionId');
+if (!sessionId) {
+  sessionId = crypto.randomUUID();
+  sessionStorage.setItem('sessionId', sessionId);
+}
+```
+
+**X-Request-Id:**
+- **Format:** UUID v4 (client-generated per API call)
+- **Purpose:** Client-side request correlation
+- **Note:** Backend returns its own `requestId` in response body (Section 6.2.1.1)
+
+**Demo Mode:**
 - Both IDs must be generated even in **Demo Mode** to ensure correlation plumbing is tested
+
+**Acceptance:**
+- Session IDs are unique per tab
+- Session IDs are stable for tab lifetime
+- Session IDs are not leaked in production logs (hashed only)
 
 #### 7.5.2 Structured Event Logging
 
@@ -995,19 +1613,84 @@ Log structured events (PII-safe) for:
 - Auth events (login, logout, token refresh)
 - Errors (code, requestId, retryable)
 
-#### 7.5.3 Production Logging Restrictions
+#### 7.5.3 Production Logging Restrictions (Issues #5, #20)
 
-**CRITICAL:** In production builds:
-- **NEVER** log request/response bodies for `/v1/chat` (may contain sensitive legal content)
-- **NEVER** log full JWTs or authorization headers
-- Log only: method, path, status code, duration, requestId, error code (if error)
-- Structured metadata only; no raw payloads
+##### Never Log (Plaintext)
+- **Authentication tokens** (Kinde JWT, Google OAuth tokens)
+- **User search queries** (legal matters are sensitive - may contain case details, client info)
+- **Chat message bodies** (conversations may contain PII/privileged information)
+- **Full authorization headers** (`Authorization: Bearer <token>`)
+- **Personally Identifiable Information** (email in logs acceptable only in structured fields for correlation)
 
-#### 7.5.4 Support Reference
+##### Allowed Diagnostics
+For search and chat requests, production logs MAY include:
+- `requestId`, `conversationId`, `messageId` (from response)
+- `X-Session-Id` (hashed as `SHA-256(sessionId)` - NOT plaintext)
+- Query/message **length** (character count)
+- **Hashed query** (salted SHA-256) if needed for deduplication analysis
+- HTTP status code
+- Latency (ms)
+- Error codes (without sensitive details)
+- Scope selection (e.g., "precedent", "workspace")
+- Result/citation count
 
-- Surface backend `requestId` in UI for all errors
-- Format: "Error ID: {requestId}" with copy button
-- Users can provide this ID to support for investigation
+##### Security Event Logging (Always Allowed)
+These events MUST be logged:
+- Authentication failures (with reason code, NOT credentials)
+- Authorization rejections (with requestId, userId, attempted resource)
+- Rate limit violations (userId, endpoint, timestamp)
+- CORS violations (rejected origin, requestId)
+- OAuth security violations:
+  - State token mismatch
+  - PKCE validation failure
+  - Identity mismatch (wrong Google account)
+  - Invalid redirect attempt
+  - Token encryption/decryption errors
+
+##### Implementation
+- **Structured logging** with `severity` field (DEBUG, INFO, WARN, ERROR, CRITICAL)
+- **Log scrubbing middleware** to strip sensitive fields before export
+- **Separate log sinks** for security events (higher retention, 90 days minimum)
+- **Never use** `console.log` in production (use structured logger only)
+
+**Acceptance:**
+- Production logs cannot reconstruct user legal queries or chat messages
+- Security events are logged with appropriate severity
+- Token values never appear in logs (encrypted or plaintext)
+
+#### 7.5.4 Support Reference (Issue #10)
+
+##### Error State Display Requirements
+
+On any error (API error or application error), the UI MUST display:
+- **User-friendly error message** (per Section 6.4 error code mapping)
+- **Request ID** in monospace font with copy button
+- **Session ID** (optional, for advanced troubleshooting - display hashed value)
+
+**Example Error Screen:**
+```
+⚠️ Unable to complete your search
+
+The search service is temporarily unavailable. Please try again in a few moments.
+
+Request ID: 7f3e4d2c-1a9b-4c5e-8f6d-2b3c4d5e6f7a [Copy]
+```
+
+**Copy Button Behavior:**
+- One-click copy to clipboard
+- Show "Copied!" feedback for 2 seconds
+- Format copied text as: `Request ID: {requestId}`
+
+##### Support Workflow
+1. User experiences error and sees requestId
+2. User clicks "Copy" button
+3. User contacts support with request ID
+4. Support uses requestId to query backend logs (correlation with X-Session-Id hash if needed)
+
+**Acceptance:**
+- Every error screen shows backend `requestId` from response
+- Copy button works reliably across all browsers
+- Support can correlate user reports to backend logs using `requestId`
 
 ---
 
@@ -1071,14 +1754,55 @@ Log structured events (PII-safe) for:
 
 ### 10.2 Integration Testing & Demo Mode
 
-#### 10.2.1 Demo Mode (Mandatory for Standalone Development)
+#### 10.2.1 Demo Mode (Mandatory for Standalone Development) - Issue #16
 
 The frontend MUST work fully with MSW mocks before any backend is available. This enables parallel development and comprehensive UI testing.
 
-**Configuration:**
-- Enable via `VITE_DEMO_MODE=true` environment variable
-- **Visual indicator:** Display "Demo Mode" banner in header when active
-- In Demo Mode, all API calls are intercepted by MSW; no real backend required
+##### Production Safety Guard (CRITICAL)
+
+**Build-time check:**
+- `VITE_DEMO_MODE=true` is forbidden when `VITE_ENV=production`
+- Build script MUST fail if both conditions are true
+- CI check: `if [[ "$VITE_ENV" == "production" && "$VITE_DEMO_MODE" == "true" ]]; then exit 1; fi`
+
+**Runtime check (REQUIRED):**
+```typescript
+// In main.tsx or app bootstrap
+if (import.meta.env.VITE_ENV === 'production' && import.meta.env.VITE_DEMO_MODE === 'true') {
+  throw new Error('FATAL: Demo Mode cannot run in production');
+}
+```
+
+**Acceptance:** Demo Mode cannot ship to production (build-time AND runtime enforcement).
+
+##### Demo Mode Banner (Mandatory UX)
+
+When `VITE_DEMO_MODE=true`, the app MUST display:
+- **Fixed top banner** (always visible, cannot be dismissed)
+- **High contrast** (e.g., orange/yellow background, dark text like `#FF6B00` on `#FFF3CD`)
+- **Text:** "⚠️ DEMO MODE - Using mock data - Not connected to real services"
+- **Placement:** Above all content, including header/navigation
+- **z-index:** Maximum (e.g., `9999`) - always on top
+- **Height:** Minimum 40px for visibility
+
+**Example CSS:**
+```css
+.demo-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #FFF3CD;
+  color: #856404;
+  padding: 10px;
+  text-align: center;
+  font-weight: 600;
+  z-index: 9999;
+  border-bottom: 2px solid #FF6B00;
+}
+```
+
+**Acceptance:** Demo Mode is unmistakable when enabled (impossible to confuse with production).
 
 **Mock Coverage Required:**
 
@@ -1105,6 +1829,36 @@ The frontend MUST work fully with MSW mocks before any backend is available. Thi
 - In Demo Mode, use a mock authenticated user (do not skip auth plumbing)
 - Mock user: `demo@vnlaw.com.vn`, name: "Demo User"
 - This ensures auth UI components are tested even without real Kinde
+
+##### Mock Service Worker (MSW) Requirements
+
+**Coverage:** MSW handlers MUST mock ALL required scenarios before backend integration:
+- Successful search (with results, including pagination)
+- Empty search results
+- Search errors (timeout, auth failure, Google disconnected)
+- Successful chat (with citations)
+- Chat errors (validation, timeout)
+- Feature flags response
+- User profile (`/v1/me`) with both connected and disconnected Google Workspace states
+- All error scenarios from table above
+
+**Ownership:** Frontend team owns MSW handlers
+- Defined in `src/mocks/handlers.ts`
+- Organized by endpoint
+- Well-documented with comments
+
+**Latency simulation:** Mock handlers SHOULD simulate realistic latencies (200-800ms random delay)
+- Helps catch loading state bugs
+- Tests skeleton screens and spinners
+
+**Phase dependency:** MSW setup MUST complete in Phase 1 before parallel backend work starts
+- Prevents frontend development blocking on backend availability
+- Enables comprehensive UI testing without backend
+
+**Acceptance:**
+- All API scenarios are mockable
+- Frontend development not blocked by backend availability
+- MSW handlers match OpenAPI specification (shape, error codes, field names)
 
 #### 10.2.2 Integration Testing (with MSW)
 
@@ -1150,6 +1904,77 @@ Feature flags evaluated at app init (from `/v1/flags` endpoint or build-time env
 - Hide UI controls entirely
 - If invoked programmatically, show friendly message (no broken state)
 
+### 12.1 Flag Initialization (Critical - Issue #15)
+
+##### App Startup Sequence
+
+1. **On app mount** (before rendering main UI):
+   - Fetch `GET /v1/flags`
+   - Cache in TanStack Query with `staleTime: Infinity` (flags don't change during session)
+   - Store in global state/context (e.g., React Context or Zustand)
+
+2. **UI Rendering:**
+   - Wait for flags to load before rendering scope selectors
+   - Show loading skeleton during flag fetch
+   - Use flags + MVP hard rules to determine feature availability
+
+##### Disabled Scope Protection
+
+Even if `scope` enum lists a non-MVP scope (e.g., `workspace`, `infobank`):
+- **Flag check:** `if (!flags.WORKSPACE_SEARCH_ENABLED) { /* hide from UI */ }`
+- **URL param validation:** Parse `?scope=` query param and validate against allowed scopes
+- **Error prevention:** Cannot activate disabled feature via URL manipulation
+
+**Example Implementation:**
+```typescript
+const allowedScopes = useMemo(() => {
+  const mvpScopes = ['precedent']; // Always allowed in MVP
+  if (flags.WORKSPACE_SEARCH_ENABLED) mvpScopes.push('workspace');
+  if (flags.INFOBANK_SEARCH_ENABLED) mvpScopes.push('infobank');
+  return mvpScopes;
+}, [flags]);
+
+// Filter URL param against allowed scopes (Note: MVP uses singular 'scope', see Section 8.2)
+const scopeFromUrl = searchParams.get('scope');
+const validScope = scopeFromUrl && allowedScopes.includes(scopeFromUrl)
+  ? scopeFromUrl
+  : null;
+
+// Default to 'precedent' if no valid scope
+const finalScope = validScope || 'precedent';
+```
+
+##### Loading State Handling
+
+**Before flags load:**
+- Show app-level loading spinner or skeleton
+- Do NOT render scope selector
+- Do NOT allow search/chat submission
+
+**After flags load:**
+- Render full UI with appropriate features visible/hidden
+- Apply feature flags to all conditional UI elements
+
+**Error handling:**
+- If `GET /v1/flags` fails, fall back to MVP-safe defaults:
+  ```typescript
+  const defaultFlags = {
+    WORKSPACE_SEARCH_ENABLED: false,
+    CHAT_HISTORY_ENABLED: false,
+    STREAMING_ENABLED: false,
+    FEEDBACK_ENABLED: true,  // Safe to enable
+    EXPORT_ENABLED: true,     // Safe to enable
+    INFOBANK_SEARCH_ENABLED: false
+  };
+  ```
+
+**Acceptance:**
+- Disabled scopes cannot be used accidentally (UI + URL validation)
+- UI does not flicker due to late flag load (flags load before main UI mount)
+- Feature flags are fetched exactly once per session (cached)
+
+**Reference:** Consolidated Review Issue #15
+
 ---
 
 ## 13. Deployment & Environments
@@ -1184,6 +2009,49 @@ Feature flags evaluated at app init (from `/v1/flags` endpoint or build-time env
 1. **PR previews** — Developers/reviewers use Demo Mode; focus on UI/UX, not auth flows
 2. **Staging** — QA tests real auth and API integration on `staging.vnlaw.app`
 3. **Production** — Release after staging verification
+
+#### 13.2.1 CORS & CSP Alignment for Previews (Issue #7)
+
+##### Preview Environment Configuration
+
+**Netlify Deploy Previews** (PR branches):
+- **Auth:** Demo Mode (`VITE_DEMO_MODE=true`)
+- **Backend CORS origin allowlist:**
+  - Pattern: `https://*-vnlaw-app.netlify.app` (restricted pattern)
+  - OR: Firestore registry of approved preview URLs (more restrictive option)
+- **CSP `connect-src`:** Must match CORS allowlist (prevent contradictions)
+
+**Example CSP for Preview:**
+```http
+Content-Security-Policy: default-src 'self';
+  connect-src 'self' https://*-vnlaw-app.netlify.app https://api-staging.vnlaw.app;
+```
+
+##### Production/Staging
+
+- **CORS:** Exact match only
+  - `https://vnlaw.app` (production)
+  - `https://staging.vnlaw.app` (staging)
+- **CSP `connect-src`:** Same exact origins (NO wildcards)
+- **Forbidden:** `*.netlify.app` wildcard in production (Issue #7 - attack surface)
+
+**Example CSP for Production:**
+```http
+Content-Security-Policy: default-src 'self';
+  connect-src 'self' https://vnlaw.app https://api.vnlaw.app;
+```
+
+**Security Note:**
+- CORS and CSP MUST align (same allowed origins)
+- Over-broad patterns like `*.netlify.app` allow malicious Netlify sites to attempt cross-origin calls
+- In production, remove all preview wildcards
+
+**Acceptance:**
+- Production does not accept arbitrary Netlify origins
+- Preview/staging origin rules are explicit and documented
+- CORS and CSP policies do not contradict each other
+
+**Reference:** Consolidated Review Issue #7, Section 3.3.1
 
 ### 13.3 Netlify Config Expectations
 - **PR previews:** Auto-deploy with `VITE_DEMO_MODE=true` (no real auth)
@@ -1221,8 +2089,138 @@ MVP is accepted when:
 
 | Artifact | Status | Owner | Notes |
 |----------|--------|-------|-------|
-| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; governs Section 6.2 |
+| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; v1.0.2 with OAuth endpoints + CORS contract |
 | Sample JSON files | ✅ Complete | IT | Located at `1. Research/samples/` |
+| OAuth security implementation | ❌ Required | Backend | **BLOCKER:** See Section 16.1.1 & 16.1.2 |
+| Token storage security | ❌ Required | Backend | **BLOCKER:** See Section 16.1.2 |
+
+#### 16.1.1 OpenAPI OAuth Endpoints Specification (✅ RESOLVED - Issue #1)
+
+> ✅ **RESOLVED:** The following OAuth endpoints are now fully specified in `openapi.yaml` v1.0.2 and ready for implementation. v1.0.2 fixes critical implementability issue with `/connect` endpoint.
+
+##### GET /v1/oauth/google/connect
+**Purpose:** Initiate Google Workspace OAuth flow
+
+**Authentication:** Public endpoint (no Authorization header required)
+
+**Implementation Note:** This endpoint MUST be public because SPAs cannot send Authorization headers or custom headers (X-Session-Id) during a 302 redirect. The frontend initiates this flow via `window.location.href` or an `<a>` tag, which cannot include headers.
+
+**Parameters:**
+- `redirect` (query, required): Return URL after OAuth completion
+  - Type: `string` (format: uri)
+  - Validation: Must match allowlist (see Section 5.1 FR-AUTH-05)
+  - Production allowlist: `https://vnlaw.app/workspace`, `https://staging.vnlaw.app/workspace`
+
+**Responses:**
+- `302 Found`: Redirect to Google OAuth consent screen
+  - OAuth params: `client_id`, `redirect_uri`, `state`, `scope`, `code_challenge`, `code_challenge_method=S256`, `access_type=offline`, `prompt=consent`
+- `400 Bad Request`: Invalid redirect URL (not in allowlist)
+
+**Security:**
+- Issues cryptographically strong `state` token (UUID v4 + entropy)
+- Stores state with session binding (Kinde user ID extracted from session cookie, PKCE verifier hash, redirect URL, TTL=10min)
+- The `state` token provides CSRF protection and session binding
+- Enforces redirect URL allowlist (prevents open redirect - Issue #3)
+
+**Session Binding:** Backend extracts Kinde user ID from the session cookie (Kinde SDK sets HTTP-only cookie after login). This binds the OAuth state to the authenticated user without requiring the Authorization header.
+
+##### GET /v1/oauth/google/callback
+**Purpose:** Handle OAuth callback from Google
+
+**Parameters:**
+- `code` (query, optional): Authorization code from Google
+- `state` (query, optional): State token (for CSRF protection)
+- `error` (query, optional): Error code if user denied consent
+
+**Responses:**
+- `302 Found`: Redirect back to app (success or failure)
+  - Success: `{redirectUrl}?status=connected`
+  - Failure: `{redirectUrl}?status=error&reason={errorCode}`
+
+**Security:**
+- Validates `state` (exists, not expired, not reused, matches current session)
+- Validates PKCE `code_verifier` against stored challenge (Issue #2)
+- Verifies Google account email matches Kinde user email (prevents token misbinding - Issue #4)
+- Exchanges code for tokens with Google
+- Encrypts tokens with Cloud KMS before storing in Firestore UserTokens (Issue #5)
+- Deletes state token (one-time use)
+
+##### DELETE /v1/me/workspace
+**Purpose:** Disconnect Google Workspace (revoke tokens)
+
+**Responses:**
+- `200 OK`: Workspace disconnected successfully
+  - Body: Updated user profile with workspace object showing disconnected state:
+    ```json
+    {
+      "workspace": {
+        "connected": false,
+        "connectedEmail": null,
+        "scopes": [],
+        "connectUrl": "https://api.vnlaw.app/v1/oauth/google/connect?redirect=/workspace"
+      }
+    }
+    ```
+- `401 Unauthorized`: Invalid/expired Kinde token
+- `404 Not Found`: No workspace connection exists
+
+**Security:**
+- Revokes refresh token via Google OAuth API
+- Deletes UserTokens Firestore document
+- Logs revocation event
+
+##### Implementation Checklist
+Before Phase 2 implementation:
+- [ ] All three endpoints added to `openapi.yaml` with complete schemas
+- [ ] TypeScript client types generated (validates `connectUrl` typing)
+- [ ] Backend implements state storage with TTL (Firestore or Redis)
+- [ ] Backend implements PKCE validation
+- [ ] Backend implements redirect allowlist validation
+- [ ] Backend implements identity verification (email match)
+- [ ] Backend implements token encryption (Cloud KMS)
+- [ ] Security event logging configured (state mismatch, identity mismatch, invalid redirect)
+
+**Acceptance Criteria:**
+- Frontend can implement connect and disconnect purely from OpenAPI spec (no guessing)
+- Backend can validate all security controls from spec requirements
+- No SRS/OpenAPI drift for OAuth contract
+
+**Reference:** Consolidated Review Issue #1
+
+#### 16.1.2 Token Storage Security Implementation (CRITICAL BLOCKER - Issue #5)
+
+> ⚠️ **BLOCKER:** Before storing any OAuth tokens in production, the following MUST be implemented.
+
+##### Cloud KMS Setup
+- [ ] Create KMS key ring: `vnlaw-tokens`
+- [ ] Create crypto key: `oauth-tokens` (purpose: ENCRYPT_DECRYPT)
+- [ ] Configure IAM: Grant backend service account `roles/cloudkms.cryptoKeyEncrypterDecrypter`
+- [ ] Test encryption/decryption round-trip
+
+##### Firestore Security Rules
+- [ ] Deploy rules that DENY all client access to `UserTokens` collection
+- [ ] Verify only backend service accounts can read/write
+- [ ] Test rule enforcement (client SDK should fail)
+
+##### Audit Logging
+- [ ] Enable Cloud Audit Logs for Firestore Data Access
+- [ ] Configure log sink with appropriate retention (90 days minimum)
+- [ ] Verify token access events appear in logs (with requestId correlation)
+
+##### Backend Implementation
+- [ ] Token encryption before Firestore write
+- [ ] Token decryption on Firestore read
+- [ ] Never log plaintext tokens (log scrubbing middleware - see Section 7.5.3)
+- [ ] Revocation endpoint (DELETE `/v1/me/workspace`) implemented
+- [ ] Test full lifecycle: encrypt → store → retrieve → decrypt → revoke
+
+**Acceptance:**
+- Tokens stored in Firestore are ciphertext only (verify by reading raw document)
+- Client cannot access UserTokens collection (verified by security rules test)
+- Token access appears in audit logs
+- Revocation deletes tokens and is logged
+
+**References:** Sections 3.4.1, 7.3.8, Consolidated Review Issue #5
 
 ### 16.2 Recommended Artifacts
 
@@ -1257,7 +2255,41 @@ This section breaks down the MVP into sequential, atomic phases suitable for AI-
 
 **Goal:** Deployable skeleton with authentication working
 
-**Prerequisites:** None
+**Prerequisites:** Kinde tenant and application configured (external setup required before implementation)
+
+**External Prerequisites (Must Complete First):**
+
+Before starting Phase 1 implementation, the following Kinde tenant configuration must be complete:
+
+1. **Kinde Tenant Setup:**
+   - [ ] Kinde tenant created (e.g., `vnlaw-app.kinde.com`)
+   - [ ] Google social connection configured in Kinde
+   - [ ] Domain restriction enabled: `@vnlaw.com.vn` (email domain allowlist)
+
+2. **Kinde Application Setup:**
+   - [ ] Application created in Kinde tenant (type: "Regular Web Application")
+   - [ ] Callback URLs configured:
+     - Production: `https://vnlaw.app/callback`, `https://vnlaw.app/workspace`
+     - Staging: `https://staging.vnlaw.app/callback`, `https://staging.vnlaw.app/workspace`
+     - Local dev: `http://localhost:5173/callback`, `http://localhost:3000/callback`
+   - [ ] Logout redirect URLs configured (same as callback URLs, replace `/callback` with `/`)
+   - [ ] Allowed web origins configured (same domains without path)
+
+3. **Environment Variables:**
+   - [ ] `VITE_KINDE_DOMAIN` - Kinde tenant domain
+   - [ ] `VITE_KINDE_CLIENT_ID` - Application client ID
+   - [ ] `VITE_KINDE_REDIRECT_URI` - Callback URL for environment
+   - [ ] `VITE_KINDE_LOGOUT_REDIRECT_URI` - Post-logout URL
+
+**Documentation Requirement:**
+
+These prerequisites and their values MUST be documented in the project README before Phase 1 begins, so developers can configure their local environments.
+
+**Acceptance Criteria (External Prerequisites):**
+- [ ] Kinde configuration complete and documented
+- [ ] Environment variables template provided in README
+- [ ] Test login succeeds with `@vnlaw.com.vn` email
+- [ ] Non-`@vnlaw.com.vn` emails are rejected
 
 **Tasks (in order):**
 - [ ] Initialize Vite + React + TypeScript project with monorepo structure
@@ -1341,14 +2373,31 @@ Set up project foundation with authentication
 None (auth only)
 
 ## Acceptance Checks
+
+**Core Authentication:**
 - [ ] `@vnlaw.com.vn` user can log in
 - [ ] Other domains redirected to /access-denied
 - [ ] Logout clears session
+- [ ] Tokens stored in memory only (NOT localStorage)
 - [ ] Deployed to Netlify preview
+
+**Security Prerequisites (BLOCKERS - must complete before Phase 2):**
+- [x] **OAuth Contract Complete:** All three OAuth endpoints specified in OpenAPI (Issue #1, Section 16.1.1) ✅ RESOLVED
+  - GET `/v1/oauth/google/connect`
+  - GET `/v1/oauth/google/callback`
+  - DELETE `/v1/me/workspace`
+- [ ] **Token Security Ready:** KMS key created, Firestore rules deployed, audit logging enabled (Issue #5, Section 16.1.2)
+- [ ] **CORS Configured:** Preflight handling working, origin validation tested (Issue #6, Section 3.3.1)
+- [ ] **MSW Handlers Complete:** All required mock scenarios implemented with latency simulation (Issue #16, Section 10.2.1)
+- [ ] **Demo Mode Guard:** Runtime check prevents production deployment (Issue #16, Section 10.2.1)
+- [ ] **Kinde External Config:** Callback URLs, allowed domains, environment variables documented in README
+
+**References:** Consolidated Review Issues #1, #5, #6, #16, and review finding #21
 
 ## Tests Added
 - [ ] Auth hook unit tests
 - [ ] ProtectedRoute component test
+- [ ] Demo Mode runtime guard test
 ```
 
 ---
@@ -1581,11 +2630,15 @@ apps/precedent-search/src/
 │       ├── FeedbackButtons.tsx
 │       ├── FeedbackModal.tsx
 │       └── index.ts
-└── hooks/
-    └── useFeedback.ts
+├── hooks/
+│   └── useFeedback.ts
+└── utils/
+    └── sanitize-logs.ts         (NEW - log scrubbing for sensitive data)
 ```
 
 **Exit Criteria:**
+
+**Error Handling & Feedback:**
 - [ ] Network errors show user-friendly messages
 - [ ] "Retrying..." appears during automatic retries
 - [ ] Manual retry available after max retries
@@ -1594,7 +2647,16 @@ apps/precedent-search/src/
 - [ ] Feedback submission succeeds
 - [ ] Request ID visible for support
 
-**Requirement Coverage:** FR-ERR-01 through FR-ERR-03, FR-FB-01, FR-FB-02
+**Security & Privacy (Critical):**
+- [ ] **Logging compliance:** Sensitive data (queries, tokens, chat messages) NOT logged in production mode (Section 7.5.3)
+- [ ] **RequestId display:** All error states show `requestId` with copy button (Issue #10, Section 7.5.4)
+- [ ] **Session ID privacy:** X-Session-Id hashed before logging, not logged in plaintext (Issue #18, Section 7.5.1)
+- [ ] **Input validation:** Oversized queries/messages rejected with appropriate error codes (Issue #19, Sections 6.2.2, 6.2.3)
+  - Query > 500 chars → `QUERY_TOO_LONG` (HTTP 400)
+  - Message > 4000 chars → `VALIDATION_ERROR` (HTTP 400)
+- [ ] **Log scrubbing:** `sanitize-logs.ts` utility strips tokens and PII before logging
+
+**Requirement Coverage:** FR-ERR-01 through FR-ERR-03, FR-FB-01, FR-FB-02, Security Issues #5, #10, #18, #19, #20
 
 **PR Boundary:** Single PR titled `feat: error handling, feedback, and resilience`
 
@@ -2021,6 +3083,71 @@ export interface HealthResponse {
 }
 ```
 
+#### 19.1.3 OAuth Types
+
+```typescript
+// packages/shared/src/types/oauth.ts
+
+// OAuth state storage (backend)
+export interface OAuthStateDocument {
+  stateToken: string;
+  kindeUserId: string;        // Session binding
+  redirectUrl: string;         // Validated return URL
+  pkceVerifierHash: string;    // For PKCE validation
+  createdAt: Date;
+  expiresAt: Date;             // TTL = 10 minutes
+}
+
+// OAuth error details (typed error response)
+export interface AuthGoogleDisconnectedDetails {
+  connectUrl: string;          // REQUIRED: OAuth initiation URL
+  requiredScopes?: string[];   // OPTIONAL: If re-consent needed
+}
+
+// Feature flags response (matches API contract casing)
+export interface FeatureFlagsResponse {
+  requestId: string;
+  flags: {
+    WORKSPACE_SEARCH_ENABLED: boolean;
+    CHAT_HISTORY_ENABLED: boolean;
+    STREAMING_ENABLED: boolean;
+    FEEDBACK_ENABLED: boolean;
+    EXPORT_ENABLED: boolean;
+    INFOBANK_SEARCH_ENABLED: boolean;
+  };
+}
+
+// Optional: Frontend-friendly camelCase version (transformed from API response)
+export interface FeatureFlags {
+  workspaceSearchEnabled: boolean;
+  chatHistoryEnabled: boolean;
+  streamingEnabled: boolean;
+  feedbackEnabled: boolean;
+  exportEnabled: boolean;
+  infobankSearchEnabled: boolean;
+}
+
+// User profile with workspace connection status
+export interface UserProfile {
+  requestId: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    workspace: {
+      connected: boolean;
+      email?: string;            // Google account email
+      scopes?: string[];          // Granted OAuth scopes
+      lastConnected?: string;     // ISO-8601 timestamp
+    } | null;
+  };
+}
+```
+
+**Note:** These OAuth types complement the OpenAPI-generated types. The `OAuthStateDocument` is backend-only (Firestore schema). The others should match OpenAPI definitions.
+
+**References:** Sections 3.4.1, 5.1, 16.1.1
+
 ### 19.2 Application State Types
 
 ```typescript
@@ -2331,6 +3458,68 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
 | 11 | WCAG 2.1 AA compliance | Core flows | ☐ |
 | 12 | Mobile responsive | All pages | ☐ |
 
+### 21.3 Security Compliance Checklist (Critical for Production Release)
+
+> ⚠️ **All items MUST pass before production deployment**
+
+#### OAuth Security
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 1 | State tokens validated (one-time use, TTL enforced, session binding) | Section 5.1 FR-AUTH-05 | ☐ |
+| 2 | PKCE implemented and validated | Section 5.1 FR-AUTH-05 | ☐ |
+| 3 | Redirect URLs validated against strict allowlist | Section 5.1 FR-AUTH-05 | ☐ |
+| 4 | Identity mismatch prevented (Google email === Kinde email) | Section 5.1 FR-AUTH-05 | ☐ |
+| 5 | Open redirect tests pass | Section 16.1.1 | ☐ |
+| 6 | OAuth endpoints in OpenAPI spec | Section 16.1.1 | ☐ |
+
+#### Token Storage
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 7 | Tokens encrypted with Cloud KMS before storage | Section 3.4.1, 16.1.2 | ☐ |
+| 8 | Firestore security rules deny client access to UserTokens | Section 3.4.1 | ☐ |
+| 9 | Audit logging enabled and verified | Section 3.4.1 | ☐ |
+| 10 | Revocation endpoint working and tested | Section 16.1.1 | ☐ |
+| 11 | No plaintext tokens in logs (verified via log inspection) | Section 7.5.3 | ☐ |
+
+#### CORS & API Security
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 12 | Production CORS locked down (no wildcards) | Section 3.3.1 | ☐ |
+| 13 | Preflight handling working for all endpoints | Section 6.2.0 | ☐ |
+| 14 | Origin validation tested (allowed and forbidden origins) | Section 3.3.1 | ☐ |
+| 15 | Input validation enforced (maxLength, required fields) | Section 6.2.2, 6.2.3 | ☐ |
+| 16 | Rate limiting working (tested with 429 responses) | Section 6.5 | ☐ |
+
+#### Logging & Privacy
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 17 | No sensitive data in production logs (queries, tokens, PII) | Section 7.5.3 | ☐ |
+| 18 | Security events logged (auth failures, CORS violations, rate limits) | Section 7.5.3 | ☐ |
+| 19 | RequestId in all responses (verified) | Section 6.2.1.1, 7.5.4 | ☐ |
+| 20 | Session ID hashed in logs (not plaintext) | Section 7.5.1 | ☐ |
+
+#### Demo Mode
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 21 | Runtime guard prevents production deployment | Section 10.2.1 | ☐ |
+| 22 | Build fails if PROD + DEMO_MODE | Section 10.2.1 | ☐ |
+| 23 | Banner always visible in demo mode | Section 10.2.1 | ☐ |
+
+#### Edge Cases & Resilience
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 24 | Token refresh failure handled gracefully | FR-AUTH-06 | ☐ |
+| 25 | Browser crash/restore tested (auth state recovery) | Section 8.1 | ☐ |
+| 26 | Long idle period tested (token expiry UX) | FR-AUTH-06 | ☐ |
+| 27 | Partial success (207) displays warning banner | Section 6.0.3 | ☐ |
+
+**Acceptance:**
+- All 27 items checked before production release
+- Security findings from penetration testing (if applicable) resolved
+- OWASP Top 10 risks mitigated
+
+**References:** Consolidated Review Issues #1-#23, particularly security-critical Issues #2, #3, #4, #5, #6, #7
+
 ---
 
 ---
@@ -2347,5 +3536,7 @@ VITE_SENTRY_DSN=https://...@sentry.io/...
 | 1.5.0 | 2025-12-24 | Critical contract fixes: added `messageId` to chat response, fixed `retryAfterSeconds` type, completed ErrorCode union, removed SEARCH_PARTIAL_FAILURE from error codes (partial is success), clarified `/v1/health` auth exception, corrected feature flag defaults, unified URL routing to `/`, defined `requestId` as UUID v4, documented `_meta` field policy, standardized scope format, added security requirements (XSS, external links, Demo Mode guard), added toolchain specification, clarified auth/connect pattern, added CORS requirements |
 | 1.5.1 | 2025-12-24 | Consistency fixes: fixed section numbering (6.4/6.5), fixed Phase 3 URL pattern, made `/settings` consistently Required, clarified Netlify publish dir for monorepo, removed invalid JSON comments, added `INFOBANK_SEARCH_ENABLED` to FeatureFlags type, completed retry matrix with 502, expanded canonical result model, added CSP/HSTS to netlify.toml, aligned recent searches with privacy guidance, clarified requestId vs X-Request-Id, picked pnpm + Vitest, marked Section 19 types as stub |
 | 1.5.2 | 2025-12-24 | Design decisions implemented: (1) Generated `openapi.yaml` from Section 6.2 — now ✅ Ready; (2) Multi-turn chat uses stateless `messages[]` array with `contextLimitWarning` field; (3) SSE streaming marked as POST-MVP deferred with hook for future; (4) Added dynamic CORS origin validation pattern for `*.netlify.app` previews; (5) Preview auth strategy: PR previews use Demo Mode, `staging.vnlaw.app` uses real Kinde auth; (6) Referenced authoritative sample JSON files by path; (7) Corrected OpenAPI/tooling notes for the now-present spec |
+| **1.6.0** | **2025-12-25** | **Major security & contract update based on consolidated technical review (23 issues addressed):** <br/>• **Section 0.2:** Added Critical Security Requirements highlighting 3 blockers <br/>• **Section 3.3.1:** Added comprehensive CORS Security Policy (production/preview origins, preflight handling) - Issues #6, #7 <br/>• **Section 3.4.1:** Added UserTokens Collection Security requirements (KMS encryption, Firestore rules, audit logging) - Issue #5 <br/>• **Section 5.1 FR-AUTH-05:** Expanded OAuth security (PKCE, state validation, identity verification, redirect allowlist, callback sequence) - Issues #2, #3, #4 <br/>• **Section 6.0.3:** Clarified HTTP 200 vs 207 deterministic rule for partial success - Issue #13 <br/>• **Section 6.2.0:** Added CORS Preflight Handling requirements - Issue #6 <br/>• **Section 6.2.1.1:** Strengthened requestId as MANDATORY in all responses - Issue #10 <br/>• **Section 6.2.2 & 6.2.3:** Added input validation constraints (query/message maxLength, DoS prevention) - Issue #19 <br/>• **Section 6.3.1:** Added Error Response Polymorphism for typed error details (AUTH_GOOGLE_DISCONNECTED) - Issue #8 <br/>• **Section 6.4:** Added REQUEST_TIMEOUT error code - Issue #22 <br/>• **Section 6.5:** Added concrete rate limit values (60 req/min per user, 10 req/min for health, 5 req/min for OAuth) - Issue #14 <br/>• **Section 7.3.8:** Added OAuth Token Storage Security summary (references Section 3.4.1) - Issue #5 <br/>• **Section 16.1.1:** Added OpenAPI OAuth Endpoints Specification as CRITICAL BLOCKER (GET /connect, GET /callback, DELETE /me/workspace) - Issue #1 <br/>• **Section 16.1.2:** Added Token Storage Security Implementation as CRITICAL BLOCKER (KMS setup, Firestore rules, audit logging checklists) - Issue #5 <br/>• **Updated Section 0.1:** Marked OAuth flow and token security as resolved, added new open questions for rate limits and 200 vs 207 confirmation <br/>• **Updated blocking artifacts table:** Marked openapi.yaml as incomplete pending OAuth endpoints |
+| **1.6.1** | **2025-12-25** | **Internal consistency fixes & missing items completion (10 fixes based on verification review):** <br/>• **Fixed OpenAPI status:** Changed from "✅ Ready" to "⚠️ Incomplete" with status note explaining OAuth endpoints pending (Section 0 contracts table) - Verification contradiction #1 <br/>• **Added requestId to examples:** Updated `/v1/me`, `/v1/flags`, `/v1/health` response examples to include mandatory `requestId` field (Sections 6.2.6, 6.2.7, 6.2.8) - Contradiction #2 <br/>• **Standardized feature flags casing:** Changed all code examples and TypeScript types to use `SCREAMING_SNAKE_CASE` matching API contract; added optional camelCase transform helper (Sections 12.1, 19.1.3) - Contradiction #3 <br/>• **Fixed URL param drift:** Standardized to singular `scope` param (not plural `scopes`) matching MVP spec; updated code examples in Section 12.1 - Contradiction #4 <br/>• **Aligned OAuth return URL:** Changed from `/settings?workspace_connected=1` to `/workspace?status=connected` consistently (Section 5.4) - Contradiction #5 <br/>• **Clarified citation deduplication:** Updated Section 5.3.1 to specify backend-only dedup (frontend displays as-provided), referencing Section 6.2.9 - Contradiction #6 <br/>• **Removed CORS wildcard snippet:** Replaced old permissive code allowing `*.netlify.app` with strict environment-based validation (Section 3.3) - Contradiction #7 <br/>• **Standardized conversationId format:** Changed from `conv_<random>` prefix to plain UUID v4 in common fields table (Section 6.2.1.1) - Contradiction #8 <br/>• **Added Phase 1 Kinde prerequisites:** Comprehensive external setup requirements including tenant config, application setup, callback URLs, environment variables, and acceptance criteria (Section 17.1) - Issue #21 <br/>• **Added Section 7.3.9 Token Persistence Edge Cases:** Documented 8 edge case scenarios (Kinde token expiry, browser tab close/reopen, crash/restore, Google OAuth token expiry/revocation, long idle period, network failure during OAuth, concurrent tab OAuth) with expected behaviors, acceptance criteria, implementation guidance, testing requirements, and monitoring recommendations - Issue #23 <br/>• **Renumbered Section 7.3.9 → 7.3.10:** Old "Recent Searches Privacy" section renumbered to make room for Token Persistence Edge Cases |
 
-*End of SRS v1.5.2*
+*End of SRS v1.6.1*
