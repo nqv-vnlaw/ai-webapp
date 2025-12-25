@@ -6,8 +6,54 @@
 
 | Artifact | Status | Owner | Notes |
 |----------|--------|-------|-------|
-| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; governs Section 6.2 |
+| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; v1.0.3 with OAuth endpoints + CORS contract |
 | Sample JSON files | ✅ Complete | IT | Located at `1. Research/samples/` |
+| OAuth security implementation | ❌ Required | Backend | **BLOCKER:** See Section 16.1.1 |
+| Token storage security | ❌ Required | Backend | **BLOCKER:** See Section 16.1.2 |
+
+#### 16.1.1 OpenAPI OAuth Endpoints Specification (✅ RESOLVED - Issue #1)
+
+> ✅ **RESOLVED:** OAuth endpoints are fully specified in OpenAPI v1.0.3 and ready for implementation.
+
+##### GET /v1/oauth/google/connect
+- **Purpose:** Initiate Google Workspace OAuth flow
+- **Authentication:** Public endpoint (no Authorization header required)
+- **Security:** Issues cryptographically strong `state` token; stores state with session binding, PKCE verifier hash, redirect URL; enforces redirect allowlist
+
+##### GET /v1/oauth/google/callback
+- **Purpose:** Handle OAuth callback from Google
+- **Security:** Validates `state` and PKCE, verifies Google account email matches Kinde user, exchanges code for tokens, encrypts tokens, deletes state token
+
+##### DELETE /v1/me/workspace
+- **Purpose:** Disconnect Google Workspace (revoke tokens)
+- **Security:** Revokes refresh token, deletes UserTokens document, logs revocation event
+
+**Acceptance Criteria:**
+- Frontend can implement connect/disconnect purely from OpenAPI spec
+- Backend can validate all security controls from spec requirements
+- No SRS/OpenAPI drift for OAuth contract
+
+#### 16.1.2 Token Storage Security Implementation (CRITICAL BLOCKER - Issue #5)
+
+> ⚠️ **BLOCKER:** Before storing any OAuth tokens in production, the following MUST be implemented.
+
+**Cloud KMS Setup**
+- Create KMS key ring: `vnlaw-tokens`
+- Create KMS key: `oauth-tokens`
+- Grant Cloud Run service account `cloudkms.cryptoKeyEncrypterDecrypter`
+
+**Firestore Rules**
+- Deny all client access to `UserTokens` collection
+- Allow only backend service accounts
+
+**Audit Logging**
+- Enable Cloud Audit Logs for Firestore
+- Log token access events with `requestId` correlation
+
+**Acceptance:**
+- Tokens are encrypted at rest
+- Token reads are auditable
+- Revocation works and is tested
 
 ### 16.2 Recommended Artifacts
 
@@ -42,7 +88,31 @@ This section breaks down the MVP into sequential, atomic phases suitable for AI-
 
 **Goal:** Deployable skeleton with authentication working
 
-**Prerequisites:** None
+**Prerequisites:** Kinde tenant and application configured (external setup required before implementation)
+
+Before starting Phase 1 implementation, the following Kinde tenant configuration must be complete:
+1. Kinde tenant created (e.g., `vnlaw-app.kinde.com`)
+2. Application created in Kinde tenant (type: "Regular Web Application")
+3. Callback URLs configured:
+   - `https://vnlaw.app/callback`
+   - `https://staging.vnlaw.app/callback`
+   - `http://localhost:5173/callback`
+4. Allowed logout URLs configured:
+   - `https://vnlaw.app`
+   - `https://staging.vnlaw.app`
+   - `http://localhost:5173`
+5. Allowed origins configured:
+   - `https://vnlaw.app`
+   - `https://staging.vnlaw.app`
+   - `http://localhost:5173`
+6. Environment variables available for developers:
+   - `VITE_KINDE_DOMAIN`
+   - `VITE_KINDE_CLIENT_ID`
+   - `VITE_KINDE_REDIRECT_URI`
+   - `VITE_KINDE_LOGOUT_URI`
+   - `VITE_ALLOWED_DOMAIN`
+
+These prerequisites and their values MUST be documented in the project README before Phase 1 begins.
 
 **Tasks (in order):**
 - [ ] Initialize Vite + React + TypeScript project with monorepo structure
@@ -230,7 +300,7 @@ Create typed API client with error handling
 - [ ] Add "Load more" pagination with cursor support
 - [ ] Create empty state component with suggestions
 - [ ] Create loading skeleton components
-- [ ] Add search history to localStorage (store preview only per Section 7.3.8)
+- [ ] Add search history to localStorage (store preview only per Section 7.3.10)
 - [ ] Implement query length validation (max 500 chars)
 
 **Key Files to Create:**

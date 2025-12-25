@@ -105,24 +105,69 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
 
-def get_cors_origin(request):
-    origin = request.headers.get("Origin")
-    if origin in ALLOWED_ORIGINS:
-        return origin
-    # Allow Netlify preview deployments
-    if origin and origin.endswith(".netlify.app"):
-        return origin
+# Validate origin against allowlist (see Section 3.3.1 for complete rules)
+def validate_origin(origin: str, environment: str) -> str | None:
+    if environment == 'production':
+        # Production: exact match only
+        if origin in ['https://vnlaw.app', 'https://staging.vnlaw.app']:
+            return origin
+    elif environment == 'preview':
+        # Preview: restricted pattern or allowlist
+        if origin and origin.startswith('https://') and origin.endswith('-vnlaw-app.netlify.app'):
+            return origin
+        if origin in ['http://localhost:5173', 'http://localhost:3000']:
+            return origin
     return None  # Reject unknown origins
 ```
 
 **Required Headers:**
 - `Access-Control-Allow-Origin`: Echo validated origin (NOT wildcard)
 - `Access-Control-Allow-Headers`: `Authorization`, `X-Session-Id`, `X-Request-Id`, `Content-Type`
-- `Access-Control-Allow-Methods`: `GET`, `POST`, `OPTIONS`
+- `Access-Control-Allow-Methods`: `GET`, `POST`, `DELETE`, `OPTIONS`
 - `Access-Control-Max-Age`: `86400` (preflight cache)
 - `Vary`: `Origin` (required when origin is dynamic)
 
 Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight; backend MUST handle `OPTIONS` requests.
+
+#### 3.3.1 CORS Security Policy
+
+##### Production Environment
+- **Allowed origins:** Exact match only
+  - `https://vnlaw.app` (production)
+  - `https://staging.vnlaw.app` (staging)
+- **Forbidden:** Wildcard patterns like `*.netlify.app` (Issue #7)
+- **Rationale:** Over-broad patterns allow malicious sites hosted on the same platform to attempt cross-origin calls
+
+##### Preview Environment (Development/PR)
+- **Allowed origins:**
+  - `https://*-vnlaw-app.netlify.app` (restricted pattern for PR previews)
+  - OR: Firestore allowlist of approved preview URLs (more restrictive)
+  - `http://localhost:5173`, `http://localhost:3000` (local development)
+- **Security note:** Never use unrestricted `*.netlify.app` in production
+
+##### Preflight Handling (OPTIONS)
+All API routes MUST respond to `OPTIONS` requests with:
+- `Access-Control-Allow-Origin`: validated origin (echoed from request)
+- `Access-Control-Allow-Methods`: `GET, POST, DELETE, OPTIONS`
+- `Access-Control-Allow-Headers`: `Authorization, Content-Type, X-Session-Id, X-Request-Id`
+- `Access-Control-Max-Age`: `86400` (24 hours)
+
+##### Credentials
+- `Access-Control-Allow-Credentials`: NOT used (tokens in Authorization header only)
+- No cookies or session cookies relied upon for API authentication
+- All authentication via Bearer token (Kinde JWT)
+
+##### Implementation Note
+- CORS validation MUST happen at the edge (Cloudflare Worker or Cloud Run ingress) before request reaches application logic
+- Origin validation MUST use exact string matching (NOT regex suffix matching)
+- Rejected origins MUST be logged as security events (see Section 7.5.3)
+
+**Acceptance:**
+- Production does not accept arbitrary Netlify origins
+- Preview/staging origin rules are explicit and documented
+- CORS and CSP policies align (same allowed origins)
+
+**References:** Consolidated Review Issues #6, #7
 
 ### 3.4 Firestore (MVP persistence)
 **Why selected**
@@ -132,6 +177,27 @@ Custom headers (`X-Session-Id`, `X-Request-Id`) trigger CORS preflight; backend 
 **Role**
 - Stores `UserTokens` (Google OAuth tokens keyed by user email).
 - Stores sessions/conversation metadata for MVP (optional but recommended).
+
+#### 3.4.1 UserTokens Collection Security (BLOCKER - Issue #5)
+
+> ⚠️ **CRITICAL BLOCKER:** Token storage security must be implemented before storing any OAuth tokens in production.
+
+**Summary of mandatory controls:**
+1. **Envelope encryption with Cloud KMS** (non-negotiable)
+   - All OAuth tokens MUST be encrypted before storage in Firestore
+   - Use dedicated KMS key: `vnlaw-tokens/oauth-tokens`
+2. **Firestore security rules** deny all client access to UserTokens collection
+3. **Audit logging** enabled for all token access (Cloud Audit Logs for Firestore)
+4. **Revocation capability** via DELETE `/v1/me/workspace`
+5. **Never log plaintext tokens** (see Section 7.5.3)
+
+**Acceptance:**
+- Tokens never readable in plaintext by unauthorized principals
+- Token reads are auditable with requestId correlation
+- Revocation is possible and tested
+- Production logs do not contain plaintext tokens
+
+**References:** Sections 7.3.8, 16.1.2
 
 ### 3.5 PostgreSQL (Supabase or Neon) — Post-MVP or selective MVP
 **Why selected**

@@ -74,6 +74,7 @@ export interface SearchResponse {
   };
   warnings?: string[];
   auth: AuthStatus;
+  _meta?: Record<string, unknown>;
 }
 
 // ============ Chat Types ============
@@ -106,6 +107,7 @@ export interface ChatResponse {
   citations: Citation[];
   auth: AuthStatus;
   contextLimitWarning?: boolean;  // True if conversation was truncated
+  _meta?: Record<string, unknown>;
 }
 
 // ============ SSE Event Types (POST-MVP) ============
@@ -159,6 +161,7 @@ export type ErrorCode =
   | 'QUERY_TOO_LONG'
   | 'RATE_LIMITED'
   | 'SEARCH_TIMEOUT'
+  | 'REQUEST_TIMEOUT'
   | 'UPSTREAM_ERROR'
   | 'SERVICE_UNAVAILABLE'
   | 'DATASTORE_UNAVAILABLE'
@@ -176,6 +179,16 @@ export interface APIError {
   retryAfterSeconds?: number | null;  // In seconds (not milliseconds)
 }
 
+export interface AuthGoogleDisconnectedDetails {
+  connectUrl: string;
+  requiredScopes?: string[];
+}
+
+export interface AuthGoogleDisconnectedError extends APIError {
+  code: 'AUTH_GOOGLE_DISCONNECTED';
+  details: AuthGoogleDisconnectedDetails;
+}
+
 export interface APIErrorResponse {
   error: APIError;
 }
@@ -183,6 +196,7 @@ export interface APIErrorResponse {
 // ============ Health Types ============
 
 export interface HealthResponse {
+  requestId: string;
   status: 'healthy' | 'degraded' | 'unhealthy';
   version: string;
   timestamp: string;

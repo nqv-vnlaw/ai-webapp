@@ -34,6 +34,7 @@ The frontend MUST work fully with MSW mocks before any backend is available. Thi
 | Error: 403 domain | Any | `AUTH_DOMAIN_REJECTED` |
 | Error: 403 workspace | `/v1/search` (workspace) | `AUTH_GOOGLE_DISCONNECTED` with `connectUrl` |
 | Error: 429 | Any | `RATE_LIMITED` with `retryAfterSeconds: 30` |
+| Error: 504 | Any | `REQUEST_TIMEOUT` |
 | Error: 500 | Any | `INTERNAL_ERROR` |
 | Error: 503 | Any | `SERVICE_UNAVAILABLE` |
 

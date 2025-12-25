@@ -52,3 +52,58 @@ MVP is accepted when:
 | 10 | E2E P0 scenarios passing | 100% | ☐ |
 | 11 | WCAG 2.1 AA compliance | Core flows | ☐ |
 | 12 | Mobile responsive | All pages | ☐ |
+
+### 21.3 Security Compliance Checklist (Critical for Production Release)
+
+> ⚠️ **All items MUST pass before production deployment**
+
+#### OAuth Security
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 1 | State tokens validated (one-time use, TTL enforced, session binding) | Section 5.1 FR-AUTH-05 | ☐ |
+| 2 | PKCE implemented and validated | Section 5.1 FR-AUTH-05 | ☐ |
+| 3 | Redirect URLs validated against strict allowlist | Section 5.1 FR-AUTH-05 | ☐ |
+| 4 | Identity mismatch prevented (Google email === Kinde email) | Section 5.1 FR-AUTH-05 | ☐ |
+| 5 | Open redirect tests pass | Section 16.1.1 | ☐ |
+| 6 | OAuth endpoints in OpenAPI spec | Section 16.1.1 | ☐ |
+
+#### Token Storage
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 7 | Tokens encrypted with Cloud KMS before storage | Section 3.4.1, 16.1.2 | ☐ |
+| 8 | Firestore security rules deny client access to UserTokens | Section 3.4.1 | ☐ |
+| 9 | Audit logging enabled and verified | Section 3.4.1 | ☐ |
+| 10 | Revocation endpoint working and tested | Section 16.1.1 | ☐ |
+| 11 | No plaintext tokens in logs (verified via log inspection) | Section 7.5.3 | ☐ |
+
+#### CORS & API Security
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 12 | Production CORS locked down (no wildcards) | Section 3.3.1 | ☐ |
+| 13 | Preflight handling working for all endpoints | Section 6.2.0 | ☐ |
+| 14 | Origin validation tested (allowed and forbidden origins) | Section 3.3.1 | ☐ |
+| 15 | Input validation enforced (maxLength, required fields) | Section 6.2.2, 6.2.3 | ☐ |
+| 16 | Rate limiting working (tested with 429 responses) | Section 6.5 | ☐ |
+
+#### Logging & Privacy
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 17 | No sensitive data in production logs (queries, tokens, PII) | Section 7.5.3 | ☐ |
+| 18 | Security events logged (auth failures, CORS violations, rate limits) | Section 7.5.3 | ☐ |
+| 19 | RequestId in all responses (verified) | Section 6.2.1.1, 7.5.4 | ☐ |
+| 20 | Session ID hashed in logs (not plaintext) | Section 7.5.1 | ☐ |
+
+#### Demo Mode
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 21 | Runtime guard prevents production deployment | Section 10.2.1 | ☐ |
+| 22 | Build fails if PROD + DEMO_MODE | Section 10.2.1 | ☐ |
+| 23 | Banner always visible in demo mode | Section 10.2.1 | ☐ |
+
+#### Edge Cases & Resilience
+| # | Requirement | References | Status |
+|---|-------------|------------|--------|
+| 24 | Token refresh failure handled gracefully | FR-AUTH-06 | ☐ |
+| 25 | Browser crash/restore tested (auth state recovery) | Section 8.1 | ☐ |
+| 26 | Long idle period tested (token expiry UX) | FR-AUTH-06 | ☐ |
+| 27 | Partial success (207) displays warning banner | Section 6.0.3 | ☐ |

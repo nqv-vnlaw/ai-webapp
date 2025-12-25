@@ -6,7 +6,7 @@
 2) For your task, load only the files listed in the table below.  
 3) API contracts are governed by `1. Research/openapi.yaml` (source of truth) and sample payloads in `1. Research/samples/`.  
 4) Prefer repo-root relative paths in commands and references (paths in this folder are written that way).  
-5) If you truly need the monolithic reference, use `1. Research/VNlaw_WebApps_SRS_v1.5.2.md`.
+5) If you truly need the monolithic reference, use `1. Research/VNlaw_WebApps_SRS_v1.5.2.md` (content v1.6.1).
 
 ## Quick Reference: What to Read for Each Task
 
@@ -22,8 +22,9 @@
 | **Deployment** | `08-deployment.md`, `12-environment-config.md` | - |
 
 ## Document Versions
-- SRS Version: 1.5.2
-- Last Updated: 2025-12-24
+- SRS Version: 1.6.1
+- OpenAPI Version: 1.0.3
+- Last Updated: 2025-12-25
 
 ## Route → File Reference
 

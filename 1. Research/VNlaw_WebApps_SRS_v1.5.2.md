@@ -55,7 +55,7 @@ The backend (Cloud Run BFF) is responsible for **mapping Kinde identity → stor
 | Wireframes/Mockups | 🟡 Recommended | Figma link TBD |
 | This SRS | ✅ Ready | Current document |
 
-**Status Note:** OpenAPI v1.0.2 is complete with all required endpoints including OAuth integration (`/v1/oauth/google/connect`, `/v1/oauth/google/callback`, DELETE `/v1/me/workspace`), typed error details, input validation constraints, CORS preflight contract, and consistent `requestId` fields across all responses. v1.0.2 fixes critical implementability issue with OAuth connect endpoint (now public with session cookie binding).
+**Status Note:** OpenAPI v1.0.3 is complete with all required endpoints including OAuth integration (`/v1/oauth/google/connect`, `/v1/oauth/google/callback`, DELETE `/v1/me/workspace`), typed error details, input validation constraints, CORS preflight contract, and consistent `requestId` fields across all responses. v1.0.3 fixes critical implementability issue with OAuth connect endpoint (now public with session cookie binding).
 
 **⚠️ OpenAPI Governance Rule:** Agents MUST use `openapi.yaml` as the single source of truth for API contracts. Any discrepancies between this SRS and the OpenAPI spec should be resolved by updating BOTH documents. See Section 6.0 for contract governance rules.
 
@@ -508,7 +508,7 @@ For Workspace features, the app shall detect if the backend indicates missing Go
 - Cannot redirect to arbitrary external site
 - All OAuth security violations logged as security events (see Section 7.5.3)
 
-**Implementation Note:** See Section 16.1.1 for complete OAuth endpoint specifications (fully documented in OpenAPI v1.0.2).
+**Implementation Note:** See Section 16.1.1 for complete OAuth endpoint specifications (fully documented in OpenAPI v1.0.3).
 **FR-AUTH-06 Session timeout:** The app shall attempt silent token refresh before expiry; on failure, prompt re-login and return to the previous route after successful re-authentication.
 
 **Implementation Note:** Do NOT store access tokens in localStorage. Rely on Kinde SDK's built-in session management for security. See Section 8.1 for state storage details.
@@ -2089,14 +2089,14 @@ MVP is accepted when:
 
 | Artifact | Status | Owner | Notes |
 |----------|--------|-------|-------|
-| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; v1.0.2 with OAuth endpoints + CORS contract |
+| `openapi.yaml` | ✅ Complete | IT | Located at `1. Research/openapi.yaml`; v1.0.3 with OAuth endpoints + CORS contract |
 | Sample JSON files | ✅ Complete | IT | Located at `1. Research/samples/` |
 | OAuth security implementation | ❌ Required | Backend | **BLOCKER:** See Section 16.1.1 & 16.1.2 |
 | Token storage security | ❌ Required | Backend | **BLOCKER:** See Section 16.1.2 |
 
 #### 16.1.1 OpenAPI OAuth Endpoints Specification (✅ RESOLVED - Issue #1)
 
-> ✅ **RESOLVED:** The following OAuth endpoints are now fully specified in `openapi.yaml` v1.0.2 and ready for implementation. v1.0.2 fixes critical implementability issue with `/connect` endpoint.
+> ✅ **RESOLVED:** The following OAuth endpoints are now fully specified in `openapi.yaml` v1.0.3 and ready for implementation. v1.0.3 fixes critical implementability issue with `/connect` endpoint.
 
 ##### GET /v1/oauth/google/connect
 **Purpose:** Initiate Google Workspace OAuth flow
@@ -2494,7 +2494,7 @@ Create typed API client with error handling
 - [ ] Add "Load more" pagination with cursor support
 - [ ] Create empty state component with suggestions
 - [ ] Create loading skeleton components
-- [ ] Add search history to localStorage (store preview only per Section 7.3.8)
+- [ ] Add search history to localStorage (store preview only per Section 7.3.10)
 - [ ] Implement query length validation (max 500 chars)
 
 **Key Files to Create:**
@@ -3047,6 +3047,7 @@ export type ErrorCode =
   | 'QUERY_TOO_LONG'
   | 'RATE_LIMITED'
   | 'SEARCH_TIMEOUT'
+  | 'REQUEST_TIMEOUT'
   | 'UPSTREAM_ERROR'
   | 'SERVICE_UNAVAILABLE'
   | 'DATASTORE_UNAVAILABLE'
@@ -3071,6 +3072,7 @@ export interface APIErrorResponse {
 // ============ Health Types ============
 
 export interface HealthResponse {
+  requestId: string;
   status: 'healthy' | 'degraded' | 'unhealthy';
   version: string;
   timestamp: string;
