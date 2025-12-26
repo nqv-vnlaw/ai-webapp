@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@kinde-oss/kinde-auth-react": "^5.10.1",
+    "@vnlaw/shared": "workspace:*",
     "react": "^18.2.0",
     "react-router-dom": "^6.21.0"
   },

@@ -6,6 +6,7 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/types/env.d.ts"]
 }
 

@@ -160,12 +160,13 @@ export class ApiClient {
     if (this.circuitBreaker.isOpen(endpointKey)) {
       const timeUntilRetry = this.circuitBreaker.getTimeUntilRetry(endpointKey);
       const circuitError = createCircuitBreakerError(endpointKey, timeUntilRetry);
+      const requestId = generateRequestId();
       throw new ApiClientError(
         {
           ...circuitError,
-          requestId: generateRequestId(),
+          requestId,
         },
-        generateRequestId(),
+        requestId,
         503,
         null
       );
@@ -195,14 +196,22 @@ export class ApiClient {
         };
       } catch (error) {
         lastError = error instanceof ApiClientError ? error : null;
+        const isRetryable = lastError
+          ? shouldRetry(lastError.error, lastError.status)
+          : false;
 
-        // Record failure in circuit breaker
-        if (lastError) {
+        // Record failures that indicate service instability (not 4xx/validation/rate limiting).
+        if (
+          lastError &&
+          isRetryable &&
+          lastError.status !== 429 &&
+          (lastError.status === 0 || lastError.status >= 500)
+        ) {
           this.circuitBreaker.recordFailure(endpointKey);
         }
 
         // If not a retryable error, throw immediately
-        if (!lastError || !shouldRetry(lastError.error, lastError.status)) {
+        if (!lastError || !isRetryable) {
           throw error;
         }
 
@@ -239,6 +248,7 @@ export class ApiClient {
     customHeaders: Record<string, string>,
     timeout: number
   ): Promise<Omit<ApiResponse<T>, 'retryCount'>> {
+    const clientRequestId = generateRequestId();
 
     // Build URL
     const url = `${this.baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
@@ -247,7 +257,7 @@ export class ApiClient {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'X-Session-Id': getSessionId(),
-      'X-Request-Id': generateRequestId(),
+      'X-Request-Id': clientRequestId,
       ...customHeaders,
     };
 
@@ -271,16 +281,15 @@ export class ApiClient {
 
     // Make request with timeout
     let response: Response;
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      timeoutId = setTimeout(() => controller.abort(), timeout);
 
       response = await fetch(url, {
         ...fetchOptions,
         signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
     } catch (error) {
       // Handle network errors and timeouts
       if (error instanceof Error && error.name === 'AbortError') {
@@ -288,10 +297,10 @@ export class ApiClient {
           {
             code: 'REQUEST_TIMEOUT',
             message: 'Request timed out',
-            requestId: generateRequestId(),
+            requestId: clientRequestId,
             retryable: true,
           },
-          generateRequestId(),
+          clientRequestId,
           504,
           null
         );
@@ -302,13 +311,17 @@ export class ApiClient {
         {
           code: 'SERVICE_UNAVAILABLE',
           message: 'Network error. Please check your connection.',
-          requestId: generateRequestId(),
+          requestId: clientRequestId,
           retryable: true,
         },
-        generateRequestId(),
+        clientRequestId,
         0,
         null
       );
+    } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+      }
     }
 
     // Parse rate limit headers
@@ -316,7 +329,7 @@ export class ApiClient {
 
     // Handle error responses
     if (!response.ok) {
-      await this.handleErrorResponse(response, rateLimit);
+      await this.handleErrorResponse(response, rateLimit, clientRequestId);
     }
 
     // Parse success response
@@ -329,10 +342,10 @@ export class ApiClient {
         {
           code: 'INTERNAL_ERROR',
           message: 'Invalid response: missing requestId',
-          requestId: generateRequestId(),
+          requestId: clientRequestId,
           retryable: false,
         },
-        generateRequestId(),
+        clientRequestId,
         response.status,
         rateLimit
       );
@@ -341,12 +354,8 @@ export class ApiClient {
     // Extract _meta if present
     const _meta = json._meta;
 
-    // Remove requestId and _meta from data (they're in the wrapper)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { requestId: _requestId, _meta: _metaField, ...data } = json;
-
     return {
-      data: data as T,
+      data: json as T,
       requestId,
       rateLimit,
       ...(_meta && { _meta }),
@@ -358,7 +367,8 @@ export class ApiClient {
    */
   private async handleErrorResponse(
     response: Response,
-    rateLimit: RateLimitInfo | null
+    rateLimit: RateLimitInfo | null,
+    fallbackRequestId: string
   ): Promise<never> {
     let errorData: ErrorResponse;
     let requestId: string;
@@ -366,10 +376,10 @@ export class ApiClient {
     try {
       const json = await response.json();
       errorData = json as ErrorResponse;
-      requestId = errorData.error?.requestId || generateRequestId();
+      requestId = errorData.error?.requestId || fallbackRequestId;
     } catch {
       // If response is not valid JSON, create a generic error
-      requestId = generateRequestId();
+      requestId = fallbackRequestId;
       errorData = {
         error: {
           code: 'INTERNAL_ERROR',
@@ -463,4 +473,3 @@ export function createApiClient(
 ): ApiClient {
   return new ApiClient(config);
 }
-

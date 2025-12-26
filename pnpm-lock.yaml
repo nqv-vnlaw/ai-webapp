@@ -124,6 +124,9 @@ importers:
       '@kinde-oss/kinde-auth-react':
         specifier: ^5.10.1
         version: 5.10.1(react-dom@18.3.1)(react@18.3.1)
+      '@vnlaw/shared':
+        specifier: workspace:*
+        version: link:../shared
       react:
         specifier: ^18.2.0
         version: 18.3.1

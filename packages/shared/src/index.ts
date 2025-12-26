@@ -5,6 +5,7 @@
  * - Generated OpenAPI types (from openapi-typescript)
  * - Shared utility functions
  * - Common type definitions
+ * - Environment variable type definitions (see ./types/env.d.ts)
  */
 
 // Export generated OpenAPI types
