@@ -76,7 +76,7 @@ export function ChatMessage({
       >
         {/* Message Bubble */}
         <div
-          className={`rounded-lg px-4 py-3 ${
+          className={`rounded-lg px-4 py-3 min-h-[2.5rem] ${
             isUser
               ? 'bg-blue-600 text-white'
               : 'bg-gray-100 text-gray-900'
@@ -90,7 +90,11 @@ export function ChatMessage({
           ) : (
             <div className="text-sm leading-relaxed">
               {/* Simple text rendering - markdown support can be added later */}
-              <p className="whitespace-pre-wrap break-words">{content}</p>
+              {content ? (
+                <p className="whitespace-pre-wrap break-words">{content}</p>
+              ) : (
+                <p className="text-gray-400 italic">Empty message</p>
+              )}
             </div>
           )}
         </div>

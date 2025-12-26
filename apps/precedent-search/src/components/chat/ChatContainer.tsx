@@ -130,7 +130,7 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
       )}
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
         {state.messages.length === 0 && !isLoading && (
           <div className="text-center text-gray-500 py-8">
             <p className="text-lg font-medium mb-2">Start a conversation</p>
@@ -140,52 +140,56 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
           </div>
         )}
 
-        {state.messages.map((message, index) => {
-          const isLast = index === state.messages.length - 1;
-          const isLastAssistant = isLast && message.role === 'assistant';
+        {state.messages.length > 0 && (
+          <div className="space-y-4">
+            {state.messages.map((message, index) => {
+              const isLast = index === state.messages.length - 1;
+              const isLastAssistant = isLast && message.role === 'assistant';
 
-          // Show actions only for the last assistant message
-          const actions = isLastAssistant ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleRegenerate}
-                disabled={isLoading}
-                className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Regenerate answer"
-              >
-                Regenerate
-              </button>
-              <span className="text-gray-300">|</span>
-              <button
-                onClick={handleCopy}
-                disabled={isLoading}
-                className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Copy answer"
-              >
-                Copy
-              </button>
-              <span className="text-gray-300">|</span>
-              <button
-                onClick={handleExport}
-                disabled={isLoading}
-                className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Export conversation"
-              >
-                Export
-              </button>
-            </div>
-          ) : null;
+              // Show actions only for the last assistant message
+              const actions = isLastAssistant ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleRegenerate}
+                    disabled={isLoading}
+                    className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Regenerate answer"
+                  >
+                    Regenerate
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={handleCopy}
+                    disabled={isLoading}
+                    className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Copy answer"
+                  >
+                    Copy
+                  </button>
+                  <span className="text-gray-300">|</span>
+                  <button
+                    onClick={handleExport}
+                    disabled={isLoading}
+                    className="text-xs text-gray-600 hover:text-gray-900 underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    aria-label="Export conversation"
+                  >
+                    Export
+                  </button>
+                </div>
+              ) : null;
 
-          return (
-            <ChatMessage
-              key={index}
-              role={message.role}
-              content={message.content}
-              isLoading={false}
-              actions={actions}
-            />
-          );
-        })}
+              return (
+                <ChatMessage
+                  key={index}
+                  role={message.role}
+                  content={message.content}
+                  isLoading={false}
+                  actions={actions}
+                />
+              );
+            })}
+          </div>
+        )}
 
         {/* Loading skeleton for new assistant response */}
         {isLoading && (
