@@ -235,8 +235,26 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           };
         }
       } else {
-        // Note: User message was already added to state in sendMessage before API call
-        // (see sendMessage implementation below). Only add assistant response here.
+        // For new messages (not regenerating):
+        // - If this is a retry after error, the user message should already be in state
+        //   (it was added optimistically and kept on error)
+        // - If this is a fresh send, the user message was added optimistically before API call
+        // - In both cases, we just need to add the assistant response
+        
+        // Verify user message exists (should be last message if not regenerating)
+        // If somehow missing (edge case), add it from the request
+        const lastMessage = newMessages[newMessages.length - 1];
+        const isRetryAfterError = lastRequestRef.current && 
+          lastMessage?.role !== 'user' &&
+          !lastRequestRef.current.regenerate;
+        
+        if (isRetryAfterError && lastRequestRef.current?.message) {
+          // Edge case: user message missing on retry, add it before assistant response
+          newMessages.push({
+            role: 'user',
+            content: lastRequestRef.current.message,
+          });
+        }
 
         // Add assistant response
         newMessages.push({
@@ -294,30 +312,12 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       const request = buildChatRequest(message, scope, false, false);
       lastRequestRef.current = request;
 
-      try {
-        const response = await chatMutation.mutateAsync(request);
-        handleSuccess(response);
-      } catch (error) {
-        // On error, remove the optimistic user message if API call failed
-        // This allows retry without duplicate user messages
-        setState((prev) => {
-          const newMessages = [...prev.messages];
-          // Remove last message if it's the user message we just added
-          if (
-            newMessages.length > 0 &&
-            newMessages[newMessages.length - 1].role === 'user' &&
-            newMessages[newMessages.length - 1].content === message
-          ) {
-            newMessages.pop();
-          }
-          return {
-            ...prev,
-            messages: newMessages,
-          };
-        });
-        // Re-throw to let caller handle error
-        throw error;
-      }
+      // On error, keep the optimistic user message in state
+      // This allows retry to work correctly: user message stays, and on success
+      // handleSuccess will just add the assistant response
+      // Reference: Better UX - user can see what they tried to send, and retry works seamlessly
+      const response = await chatMutation.mutateAsync(request);
+      handleSuccess(response);
     },
     [buildChatRequest, chatMutation, handleSuccess]
   );
