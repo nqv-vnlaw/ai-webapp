@@ -45,6 +45,68 @@ const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
 };
 
 /**
+ * Default max retries based on SRS retry matrix.
+ *
+ * SRS/05-nfr-security.md §7.2:
+ * - 429 RATE_LIMITED: 1
+ * - 500 INTERNAL_ERROR: 1
+ * - 502 UPSTREAM_ERROR: 2
+ * - 503 SERVICE_UNAVAILABLE: 3
+ * - 504 SEARCH_TIMEOUT: 2
+ */
+export function getDefaultMaxRetries(status: number): number {
+  switch (status) {
+    case 429:
+      return 1;
+    case 500:
+      return 1;
+    case 502:
+      return 2;
+    case 503:
+      return 3;
+    case 504:
+      return 2;
+    case 0:
+      // Network errors: treat similarly to 503 transient failures
+      return 3;
+    default:
+      // Conservative defaults for other 5xx
+      if (status >= 500) return 1;
+      return DEFAULT_RETRY_CONFIG.maxRetries;
+  }
+}
+
+/**
+ * Default base delay (ms) based on SRS retry matrix.
+ *
+ * SRS/05-nfr-security.md §7.2 backoff schedules:
+ * - 500: 2s
+ * - 502: 2s, 4s
+ * - 503: 1s, 2s, 4s
+ * - 504: 2s, 4s
+ */
+export function getDefaultBaseDelay(status: number): number {
+  switch (status) {
+    case 500:
+      return 2000;
+    case 502:
+      return 2000;
+    case 503:
+      return 1000;
+    case 504:
+      return 2000;
+    case 429:
+      // Prefer Retry-After; if absent, fall back to a short delay.
+      return 1000;
+    case 0:
+      return 1000;
+    default:
+      if (status >= 500) return 2000;
+      return DEFAULT_RETRY_CONFIG.baseDelay;
+  }
+}
+
+/**
  * Determines if an error should be retried based on error.retryable field
  * and HTTP status code.
  * 
@@ -174,4 +236,3 @@ export function calculateRetryDelay(
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

@@ -16,6 +16,8 @@ import {
   calculateRetryDelay,
   sleep,
   type RetryConfig,
+  getDefaultBaseDelay,
+  getDefaultMaxRetries,
 } from './retry';
 import {
   CircuitBreaker,
@@ -172,12 +174,13 @@ export class ApiClient {
       );
     }
 
-    const maxRetries = retryConfig.maxRetries ?? 3;
     let lastError: ApiClientError | null = null;
     let retryCount = 0;
+    let retryAttempt = 0;
+    const maxRetriesBound = retryConfig.maxRetries ?? 3;
 
-    // Retry loop
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // Retry loop (attempt 0 = first retry after initial failure)
+    while (retryAttempt <= maxRetriesBound) {
       try {
         const response = await this.executeRequest<T>(
           method,
@@ -215,8 +218,11 @@ export class ApiClient {
           throw error;
         }
 
-        // If we've exhausted retries, throw the last error
-        if (attempt >= maxRetries) {
+        const maxRetriesForStatus =
+          retryConfig.maxRetries ?? getDefaultMaxRetries(lastError.status);
+
+        // If we've exhausted retries for this error/status, throw the last error
+        if (retryAttempt >= maxRetriesForStatus) {
           throw error;
         }
 
@@ -224,11 +230,16 @@ export class ApiClient {
         const delay = calculateRetryDelay(
           lastError.error,
           lastError.rateLimit,
-          attempt,
-          retryConfig
+          retryAttempt,
+          {
+            ...retryConfig,
+            baseDelay:
+              retryConfig.baseDelay ?? getDefaultBaseDelay(lastError.status),
+          }
         );
 
-        retryCount = attempt + 1;
+        retryCount = retryAttempt + 1;
+        retryAttempt += 1;
         await sleep(delay);
       }
     }

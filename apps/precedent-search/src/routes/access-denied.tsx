@@ -9,8 +9,9 @@ export function AccessDeniedPage() {
     try {
       await logout();
       navigate('/login', { replace: true });
-    } catch (error) {
-      console.error('Logout failed:', error);
+    } catch (_error) {
+      // Avoid logging potentially sensitive details.
+      console.error('Logout failed');
       // Navigate anyway to ensure user can retry login
       navigate('/login', { replace: true });
     }
@@ -47,4 +48,3 @@ export function AccessDeniedPage() {
     </div>
   );
 }
-

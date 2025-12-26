@@ -48,6 +48,9 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
+    dataUpdatedAt,
+    isStale,
+    isFetching,
   } = infiniteQueryResult;
 
   // Prevent double-click spamming
@@ -83,12 +86,12 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
   };
 
   // Loading state
-  if (isLoading) {
+  if (isLoading && !data) {
     return <SearchSkeleton count={3} />;
   }
 
-  // Error state
-  if (error) {
+  // Error state (no cached data available)
+  if (error && !data) {
     return (
       <div className="mt-8">
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
@@ -124,6 +127,19 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
     const isPartial = firstPage.status === 'partial';
     const hasWarnings = isPartial && firstPage.warnings && firstPage.warnings.length > 0;
 
+    // SRS §8.3: Show "cached results from ..." warning when serving stale cache due to backend failure
+    const showStaleCacheWarning = Boolean(error) && isStale && !isFetching && dataUpdatedAt > 0;
+    const staleTimeAgo = showStaleCacheWarning
+      ? Math.floor((Date.now() - dataUpdatedAt) / 1000 / 60) // minutes ago
+      : 0;
+    const formatStaleTime = (minutes: number): string => {
+      if (minutes < 1) return 'less than a minute';
+      if (minutes === 1) return '1 minute';
+      if (minutes < 60) return `${minutes} minutes`;
+      const hours = Math.floor(minutes / 60);
+      return hours === 1 ? '1 hour' : `${hours} hours`;
+    };
+
     if (!hasResults) {
       return <SearchEmpty query={trimmedQuery} />;
     }
@@ -133,6 +149,39 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
           Results
         </h2>
+
+        {/* Stale cache warning (SRS §8.3) */}
+        {showStaleCacheWarning && (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <svg
+                className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <div className="flex-1">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ Unable to refresh results. Showing cached results from{' '}
+                  {formatStaleTime(staleTimeAgo)} ago.
+                </p>
+                {error?.requestId && (
+                  <p className="mt-1 text-xs text-yellow-700 font-mono">
+                    Request ID: {error.requestId}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Partial status warnings banner */}
         {hasWarnings && firstPage.warnings && (
