@@ -1,5 +1,13 @@
 # Acceptance Checklists
 
+**Last Reviewed:** 2025-12-26  
+**Legend:** ✅ implemented (frontend repo) · 🟨 partial/spec-only · ☐ not started / backend required
+
+## Current Implementation Status (Codebase)
+- Phase 1 (Scaffolding): ✅ complete
+- Phase 2 (API client & TanStack Query wiring): ✅ complete
+- Phase 3+ (Search/Chat UI and beyond): ☐ not started
+
 ## 15. MVP Acceptance Criteria (App #1: Precedent Search Bot Web)
 MVP is accepted when:
 1) Only `@vnlaw.com.vn` users can access after login.
@@ -31,8 +39,8 @@ MVP is accepted when:
 | 13 | Regenerate answer | FR-CHAT-05 | ☐ |
 | 14 | Copy/export | FR-CHAT-06 | ☐ |
 | 15 | Automatic retry | FR-ERR-01 | ✅ |
-| 16 | Retry UI | FR-ERR-02 | ✅ |
-| 17 | Manual retry | FR-ERR-03 | ✅ |
+| 16 | Retry UI | FR-ERR-02 | ☐ |
+| 17 | Manual retry | FR-ERR-03 | ☐ |
 | 18 | Feedback buttons | FR-FB-01 | ☐ |
 | 19 | PII protection | FR-FB-02 | ☐ |
 
@@ -43,7 +51,7 @@ MVP is accepted when:
 | 1 | TTI (4G throttling) | < 3.5s | ☐ |
 | 2 | LCP | < 2.5s | ☐ |
 | 3 | CLS | < 0.1 | ☐ |
-| 4 | Initial JS bundle | < 200KB gzip | ☐ |
+| 4 | Initial JS bundle | < 200KB gzip | ✅ |
 | 5 | Lighthouse performance | ≥ 80 | ☐ |
 | 6 | Lighthouse accessibility | ≥ 90 | ☐ |
 | 7 | Unit test coverage (packages) | 80% | ☐ |
@@ -52,6 +60,8 @@ MVP is accepted when:
 | 10 | E2E P0 scenarios passing | 100% | ☐ |
 | 11 | WCAG 2.1 AA compliance | Core flows | ☐ |
 | 12 | Mobile responsive | All pages | ☐ |
+
+*Note: current `pnpm build` output shows the JS bundle is well under the 200KB gzip target; this will change as Phase 3+ features are added.*
 
 ### 21.3 Security Compliance Checklist (Critical for Production Release)
 
@@ -65,7 +75,7 @@ MVP is accepted when:
 | 3 | Redirect URLs validated against strict allowlist | Section 5.1 FR-AUTH-05 | ☐ |
 | 4 | Identity mismatch prevented (Google email === Kinde email) | Section 5.1 FR-AUTH-05 | ☐ |
 | 5 | Open redirect tests pass | Section 16.1.1 | ☐ |
-| 6 | OAuth endpoints in OpenAPI spec | Section 16.1.1 | ☐ |
+| 6 | OAuth endpoints in OpenAPI spec | Section 16.1.1 | ✅ |
 
 #### Token Storage
 | # | Requirement | References | Status |

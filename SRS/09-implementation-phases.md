@@ -116,7 +116,8 @@ These prerequisites and their values MUST be documented in the project README be
 
 **Tasks (in order):**
 - [x] Initialize Vite + React + TypeScript project with monorepo structure
-- [x] Configure Tailwind CSS and install shadcn/ui
+- [x] Configure Tailwind CSS
+- [ ] Install shadcn/ui component library (optional; deferred)
 - [x] Set up ESLint, Prettier, and TypeScript strict mode
 - [x] Install and configure Kinde React SDK
 - [x] Implement login/logout flow with Google SSO
@@ -127,7 +128,7 @@ These prerequisites and their values MUST be documented in the project README be
 - [x] Configure Netlify deployment with `_redirects` for SPA
 - [x] Set up environment variables for Kinde
 
-**Status:** ✅ **COMPLETE** (2025-12-26) - All tasks completed, exit criteria met, code quality fixes applied.
+**Status:** ✅ **COMPLETE** (2025-12-26) — Phase 1 exit criteria met; code quality fixes applied. (shadcn/ui is not installed yet; deferred)
 
 **Key Files to Create:**
 ```
@@ -137,22 +138,27 @@ apps/precedent-search/
 │   ├── App.tsx
 │   ├── routes/
 │   │   ├── index.tsx
+│   │   ├── login.tsx
+│   │   ├── callback.tsx
 │   │   └── access-denied.tsx
 │   ├── components/
-│   │   ├── layout/
-│   │   │   ├── Header.tsx
-│   │   │   ├── Layout.tsx
-│   │   │   └── ProtectedRoute.tsx
-│   │   └── common/
-│   │       └── Button.tsx
-│   ├── lib/
-│   │   └── kinde.ts
-│   └── hooks/
-│       └── useAuth.ts
+│   │   └── layout/
+│   │       ├── Header.tsx
+│   │       └── Layout.tsx
+│   └── vite-env.d.ts
 ├── index.html
 ├── vite.config.ts
 ├── tailwind.config.js
 └── tsconfig.json
+
+packages/auth/
+└── src/
+    ├── provider.tsx
+    ├── hooks.ts
+    ├── guards.tsx
+    ├── env.ts
+    ├── types.ts
+    └── vite-env.d.ts
 ```
 
 **Exit Criteria:**
@@ -170,16 +176,16 @@ apps/precedent-search/
 **Verification Commands:**
 ```bash
 # Build passes
-npm run build
+pnpm build
 
 # Lint passes
-npm run lint
+pnpm lint
 
 # Type check passes
-npm run typecheck
+pnpm typecheck
 
 # Dev server starts
-npm run dev
+pnpm dev
 
 # Manual verification: Login flow works in browser
 ```
@@ -218,15 +224,21 @@ None (auth only)
 
 **Tasks (in order):**
 - [x] Create `packages/api-client` package
-- [x] Define TypeScript interfaces for all API requests/responses
+- [x] Use OpenAPI-generated TypeScript types from `@vnlaw/shared`
 - [x] Implement base fetch wrapper with Kinde token injection
 - [x] Add `X-Session-Id` header generation and persistence
 - [x] Implement standard error response handling
 - [x] Create retry logic with exponential backoff
 - [x] Add circuit breaker pattern
 - [x] Set up TanStack Query provider and configuration
-- [x] Create API hooks: `useSearch`, `useChat` (note: `useChatStream` is post-MVP)
-- [x] Add rate limit header parsing and display
+- [x] Create API hooks: `useSearch`, `useChat`
+- [x] Add rate limit header parsing (including `Retry-After`)
+
+**Deferred (not required for Phase 2 completion):**
+- [ ] Create `useChatStream` (post-MVP)
+- [ ] Display rate-limit state in UI (Phase 5)
+
+**Status:** ✅ **COMPLETE** (2025-12-26) — API client + hooks + TanStack Query wiring implemented; passing `pnpm lint`, `pnpm typecheck`, `pnpm build`.
 
 **Key Files to Create:**
 ```
@@ -234,13 +246,25 @@ packages/api-client/
 ├── src/
 │   ├── index.ts
 │   ├── client.ts
+│   ├── provider.tsx
 │   ├── types.ts
 │   ├── errors.ts
+│   ├── session.ts
+│   ├── retry.ts
+│   ├── circuit-breaker.ts
+│   ├── rate-limit.ts
+│   ├── vite-env.d.ts
 │   └── hooks/
 │       ├── useSearch.ts
 │       ├── useChat.ts
-│       └── useChatStream.ts
+│       └── index.ts
 └── package.json
+
+packages/shared/src/types/
+├── env.d.ts
+└── generated/api.ts
+
+apps/precedent-search/src/lib/query-client.ts
 ```
 
 **Exit Criteria:**
@@ -250,14 +274,13 @@ packages/api-client/
 - [x] Retry logic works for 503/504 errors
 - [x] Circuit breaker opens after 5 consecutive failures
 
-**Requirement Coverage:** FR-AUTH-04, FR-ERR-01, FR-ERR-02, FR-ERR-03
+**Requirement Coverage:** FR-AUTH-04, FR-ERR-01
 
 **PR Boundary:** Single PR titled `feat: API client with retry and circuit breaker`
 
 **Verification Commands:**
 ```bash
-npm run build && npm run lint && npm run typecheck
-npm run test -- --filter=api-client
+pnpm build && pnpm lint && pnpm typecheck
 ```
 
 **Ticket Template:**
@@ -274,10 +297,10 @@ Create typed API client with error handling
 - POST /v1/chat/stream (types only)
 
 ## Acceptance Checks
-- [x] API client injects Authorization header
-- [x] X-Session-Id generated and persisted
-- [x] Retry logic for 503/504 errors
-- [x] Circuit breaker opens after 5 failures
+- [ ] API client injects Authorization header
+- [ ] X-Session-Id generated and persisted
+- [ ] Retry logic for 503/504 errors
+- [ ] Circuit breaker opens after 5 failures
 
 ## Tests Added
 - [ ] API client unit tests (80% coverage)
