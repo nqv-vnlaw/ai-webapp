@@ -66,25 +66,41 @@ export const handlers = [
   }),
 
   // Chat endpoint - success with answer
-  http.post(`${API_BASE_URL}/v1/chat`, async () => {
+  http.post(`${API_BASE_URL}/v1/chat`, async ({ request }) => {
     await simulateLatency();
-    // const body = await request.json() as { message?: string; scope?: string };
+    const body = (await request.json()) as {
+      conversationId?: string | null;
+      regenerate?: boolean;
+    };
+
+    // Generate consistent conversation ID for same conversation
+    const conversationId = body.conversationId || crypto.randomUUID();
+    const messageId = crypto.randomUUID();
 
     return HttpResponse.json({
-      answer: 'This is a mock chat response. In a real scenario, this would contain AI-generated legal insights.',
+      requestId: crypto.randomUUID(),
+      conversationId,
+      messageId,
+      answer: 'This is a mock chat response. In a real scenario, this would contain AI-generated legal insights based on the legal documents and precedents in the database. The response would be tailored to your specific question about Vietnamese law.',
       citations: [
         {
           title: 'Reference Document 1',
           url: 'https://example.com/ref/1',
-          snippet: 'Relevant excerpt from document...',
+          snippet: 'Relevant excerpt from document that supports the answer provided above...',
+          source: 'precedent' as const,
         },
         {
           title: 'Reference Document 2',
           url: 'https://example.com/ref/2',
-          snippet: 'Another relevant excerpt...',
+          snippet: 'Another relevant excerpt that provides additional context...',
+          source: 'precedent' as const,
         },
       ],
-      requestId: crypto.randomUUID(),
+      auth: {
+        needsGoogleConnect: false,
+        connectUrl: null,
+      },
+      contextLimitWarning: false,
     });
   }),
 
