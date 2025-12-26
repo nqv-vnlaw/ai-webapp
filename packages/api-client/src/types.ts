@@ -42,11 +42,5 @@ export interface ApiClientConfig {
    * Returns null if no token is available
    */
   getAccessToken: () => Promise<string | null>;
-
-  /**
-   * Callback function to retrieve or generate the session ID
-   * Should return a UUID v4 string, persisted per tab (sessionStorage)
-   */
-  getSessionId: () => string;
 }
 
