@@ -31,7 +31,7 @@
 - ✅ Demo Mode (`VITE_DEMO_MODE=true`) bypasses real auth (for deploy previews)
 
 ### 5. Layout Components
-- ✅ `Layout` component with header
+- ✅ `Layout` component with header + footer
 - ✅ `Header` component with user info and logout
 - ✅ Protected main route (`/`) with placeholder content
 

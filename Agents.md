@@ -4,7 +4,7 @@
 
 **Full SRS:** `1. Research/VNlaw_WebApps_SRS_v1.5.2.md`  
 **OpenAPI Spec:** `1. Research/openapi.yaml`  
-**Last Updated:** 2025-12-25
+**Last Updated:** 2025-12-26
 
 ---
 
@@ -188,10 +188,23 @@ mcp__exa__web_search_exa:
 
 ## Implementation Phases
 
+> **Before starting any phase, review these SRS tracking documents:**
+> - **SRS/09-implementation-phases.md** - Phase tasks, exit criteria, and completion status
+> - **SRS/13-acceptance-checklists.md** - Feature completion checklists and acceptance criteria
+> - **SRS/14-revision-history.md** - SRS document version history (for context)
+
+**How to use:**
+1. Check `SRS/09-implementation-phases.md` Section 17.X for the phase you're starting
+2. Verify all previous phase tasks and exit criteria are marked complete (`[x]`)
+3. Review `SRS/13-acceptance-checklists.md` to see which features are already complete
+4. Mark tasks and exit criteria as complete (`[x]`) when you finish the phase
+5. Update feature checklists in `SRS/13-acceptance-checklists.md` when features are implemented
+
 ### Phase 1: Project Scaffolding
 **Goal:** Deployable skeleton with authentication working  
 **Key Tasks:** Vite + React + TypeScript setup, Kinde integration, domain restriction, protected routes  
 **Exit Criteria:** User can log in, non-domain users redirected, site deploys to Netlify  
+**Status:** ✅ **COMPLETE** (2025-12-26)  
 **Reference:** SRS Section 17.1
 
 ### Phase 2: API Client & Core Infrastructure

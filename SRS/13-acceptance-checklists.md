@@ -16,8 +16,8 @@ MVP is accepted when:
 
 | # | Feature | Requirements | Status |
 |---|---------|--------------|--------|
-| 1 | Domain-restricted login | FR-AUTH-01, FR-AUTH-02 | ☐ |
-| 2 | Session persistence | FR-AUTH-03 | ☐ |
+| 1 | Domain-restricted login | FR-AUTH-01, FR-AUTH-02 | ✅ |
+| 2 | Session persistence | FR-AUTH-03 | ✅ |
 | 3 | Token-based API auth | FR-AUTH-04 | ☐ |
 | 4 | Search with precedent scope | FR-SEARCH-01, FR-SEARCH-02, FR-SEARCH-03 | ☐ |
 | 5 | Search results display | FR-SEARCH-04 | ☐ |

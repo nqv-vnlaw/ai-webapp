@@ -4,7 +4,7 @@
 
 **Full SRS:** `1. Research/VNlaw_WebApps_SRS_v1.5.2.md`  
 **OpenAPI Spec:** `1. Research/openapi.yaml`  
-**Last Updated:** 2025-12-25
+**Last Updated:** 2025-12-26
 
 ---
 
@@ -143,8 +143,22 @@ Kinde is source of truth for "who is logged in." Google OAuth tokens required on
 
 ## Implementation Phases (Detailed)
 
+> **Before starting any phase, review these SRS tracking documents:**
+> - **SRS/09-implementation-phases.md** - Phase tasks, exit criteria, and completion status
+> - **SRS/13-acceptance-checklists.md** - Feature completion checklists and acceptance criteria
+> - **SRS/14-revision-history.md** - SRS document version history (for context)
+
+**How to use:**
+1. Check `SRS/09-implementation-phases.md` Section 17.X for the phase you're starting
+2. Verify all previous phase tasks and exit criteria are marked complete (`[x]`)
+3. Review `SRS/13-acceptance-checklists.md` to see which features are already complete
+4. Mark tasks and exit criteria as complete (`[x]`) when you finish the phase
+5. Update feature checklists in `SRS/13-acceptance-checklists.md` when features are implemented
+
 ### Phase 1: Project Scaffolding
 **Goal:** Deployable skeleton with authentication working
+
+**Status:** ✅ **COMPLETE** (2025-12-26)
 
 **Prerequisites:**
 - Kinde tenant configured (domain restriction enabled)
@@ -165,12 +179,12 @@ Kinde is source of truth for "who is logged in." Google OAuth tokens required on
 11. Set up environment variables for Kinde
 
 **Exit Criteria:**
-- [ ] User can visit `vnlaw.app` and see login button
-- [ ] User can authenticate via Google (Kinde)
-- [ ] Non-`@vnlaw.com.vn` users are redirected to `/access-denied`
-- [ ] Authenticated users see empty dashboard
-- [ ] Logout works and clears session
-- [ ] Site deploys successfully to Netlify
+- [x] User can visit `vnlaw.app` and see login button
+- [x] User can authenticate via Google (Kinde)
+- [x] Non-`@vnlaw.com.vn` users are redirected to `/access-denied`
+- [x] Authenticated users see empty dashboard
+- [x] Logout works and clears session
+- [x] Site deploys successfully to Netlify
 
 **Reference:** SRS Section 17.1
 
