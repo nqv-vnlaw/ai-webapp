@@ -1,35 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   SearchInput,
   ScopeSelector,
   SearchResults,
-  SearchSkeleton,
 } from '../components/search';
-import { useSearchParams } from '../hooks/useSearchParams';
+import { useSearchParams } from '../hooks';
 
 export function IndexPage() {
-  const { query, scope, setQuery, setScope } = useSearchParams();
-  const [isSearching, setIsSearching] = useState(false);
+  const { query, scope, setScope, setSearchParams } = useSearchParams();
+  // Local draft state for input (prevents URL updates on every keystroke)
+  const [draftQuery, setDraftQuery] = useState(query);
 
-  const handleSearch = () => {
-    // Placeholder: Search functionality will be implemented in next phase
-    // Query and scope are already in URL via useSearchParams
-    console.log('Search:', { query, scope });
-    setIsSearching(true);
-    // Simulate search delay
-    setTimeout(() => {
-      setIsSearching(false);
-    }, 1000);
-  };
+  // Sync draftQuery when URL query changes (e.g., back/forward navigation)
+  useEffect(() => {
+    setDraftQuery(query);
+  }, [query]);
 
   const handleQueryChange = (newQuery: string) => {
-    // Update URL immediately as user types (for shareable URLs)
-    setQuery(newQuery);
+    // Update local draft only (doesn't trigger URL update)
+    setDraftQuery(newQuery);
   };
 
   const handleQuerySubmit = () => {
-    // Trigger search (will be wired to API in next phase)
-    handleSearch();
+    // Update URL on submit (push to history for back/forward navigation)
+    // Search will execute automatically via SearchResults component
+    setSearchParams(draftQuery, scope, true);
   };
 
   const handleScopeChange = (newScope: typeof scope) => {
@@ -56,24 +51,16 @@ export function IndexPage() {
         {/* Search Input */}
         <div className="mb-6">
           <SearchInput
-            value={query}
+            value={draftQuery}
             onChange={handleQueryChange}
             onSubmit={handleQuerySubmit}
-            isLoading={isSearching}
+            isLoading={false}
           />
         </div>
       </div>
 
       {/* Results Area */}
-      {isSearching ? (
-        <SearchSkeleton count={3} />
-      ) : (
-        <SearchResults
-          isLoading={false}
-          hasResults={false}
-          hasMore={false}
-        />
-      )}
+      <SearchResults query={query} scope={scope} />
 
       {/* Chat Placeholder Section */}
       <div className="mt-12 pt-8 border-t border-gray-200">

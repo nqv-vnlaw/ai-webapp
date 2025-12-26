@@ -53,7 +53,11 @@ export function SearchResultCard({
           {title}
         </a>
       </h3>
-      <p className="text-gray-600 mb-3 line-clamp-3">{snippet}</p>
+      <p className="text-gray-600 mb-3 overflow-hidden text-ellipsis" style={{
+        display: '-webkit-box',
+        WebkitLineClamp: 3,
+        WebkitBoxOrient: 'vertical',
+      }}>{snippet}</p>
       <div className="flex items-center gap-4 text-sm text-gray-500">
         <span className="px-2 py-1 bg-gray-100 rounded capitalize">
           {source}

@@ -8,7 +8,7 @@
  */
 
 import { useSearchParams as useRouterSearchParams } from 'react-router-dom';
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useEffect } from 'react';
 import type { Scope } from '@vnlaw/api-client';
 
 const DEFAULT_SCOPE: Scope = 'precedent';
@@ -28,7 +28,7 @@ export interface UseSearchParamsReturn {
   scope: Scope;
 
   /**
-   * Update query in URL
+   * Update query in URL (for typing - uses replace to avoid history pollution)
    * @param newQuery - Query string (will be trimmed)
    */
   setQuery: (newQuery: string) => void;
@@ -40,9 +40,12 @@ export interface UseSearchParamsReturn {
   setScope: (newScope: Scope) => void;
 
   /**
-   * Update both query and scope at once
+   * Update both query and scope at once (for submit - uses push for history)
+   * @param query - Query string (will be trimmed)
+   * @param scope - Scope value (will be coerced to 'precedent')
+   * @param push - Whether to push to history (default: true for submit)
    */
-  setSearchParams: (query: string, scope?: Scope) => void;
+  setSearchParams: (query: string, scope?: Scope, push?: boolean) => void;
 }
 
 /**
@@ -74,6 +77,22 @@ export function useSearchParams(): UseSearchParamsReturn {
     // Invalid or missing scope -> default to 'precedent'
     return DEFAULT_SCOPE;
   }, [searchParams]);
+
+  // Normalize URL on initial load (fix invalid/missing scope)
+  useEffect(() => {
+    const currentScope = searchParams.get('scope');
+    const needsNormalization =
+      !currentScope || (currentScope !== 'precedent' && currentScope !== '');
+
+    if (needsNormalization) {
+      const normalizedParams = new URLSearchParams(searchParams);
+      normalizedParams.set('scope', DEFAULT_SCOPE);
+      // Only normalize if params actually changed to avoid infinite loops
+      if (normalizedParams.toString() !== searchParams.toString()) {
+        setSearchParams(normalizedParams, { replace: true });
+      }
+    }
+  }, [searchParams, setSearchParams]);
 
   // Update query in URL
   const setQuery = useCallback(
@@ -115,9 +134,9 @@ export function useSearchParams(): UseSearchParamsReturn {
     [searchParams, setSearchParams]
   );
 
-  // Update both query and scope at once
+  // Update both query and scope at once (for submit - uses push by default)
   const setSearchParamsBoth = useCallback(
-    (newQuery: string, _newScope?: Scope) => {
+    (newQuery: string, _newScope?: Scope, push = true) => {
       const trimmed = newQuery.trim();
       const newParams = new URLSearchParams();
 
@@ -128,7 +147,7 @@ export function useSearchParams(): UseSearchParamsReturn {
       // MVP: Always use 'precedent' scope
       newParams.set('scope', DEFAULT_SCOPE);
 
-      setSearchParams(newParams, { replace: true });
+      setSearchParams(newParams, { replace: !push });
     },
     [setSearchParams]
   );
