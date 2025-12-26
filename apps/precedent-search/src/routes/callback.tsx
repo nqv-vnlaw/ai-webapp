@@ -1,23 +1,30 @@
 import { useAuth } from '@vnlaw/auth';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export function CallbackPage() {
   const { isAuthenticated, isLoading, isDomainAllowed } = useAuth();
   const navigate = useNavigate();
+  const hasRedirected = useRef(false);
 
   useEffect(() => {
-    if (!isLoading) {
-      if (isAuthenticated && isDomainAllowed) {
-        // Successful authentication with allowed domain
-        navigate('/', { replace: true });
-      } else if (isAuthenticated && !isDomainAllowed) {
-        // Authenticated but domain not allowed
-        navigate('/access-denied', { replace: true });
-      } else {
-        // Not authenticated, redirect to login
-        navigate('/login', { replace: true });
-      }
+    // Prevent multiple redirects if auth state updates multiple times
+    if (hasRedirected.current || isLoading) {
+      return;
+    }
+
+    if (isAuthenticated && isDomainAllowed) {
+      // Successful authentication with allowed domain
+      hasRedirected.current = true;
+      navigate('/', { replace: true });
+    } else if (isAuthenticated && !isDomainAllowed) {
+      // Authenticated but domain not allowed
+      hasRedirected.current = true;
+      navigate('/access-denied', { replace: true });
+    } else {
+      // Not authenticated, redirect to login
+      hasRedirected.current = true;
+      navigate('/login', { replace: true });
     }
   }, [isAuthenticated, isLoading, isDomainAllowed, navigate]);
 

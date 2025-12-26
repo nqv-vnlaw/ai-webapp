@@ -20,7 +20,7 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.kinde.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.vnlaw.app https://*.kinde.com; frame-ancestors 'none'; form-action 'self'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' https://cdn.kinde.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://api.vnlaw.app https://api-staging.vnlaw.app https://*.kinde.com; frame-ancestors 'none'; form-action 'self'"
 
 # Cache static assets
 [[headers]]
@@ -39,4 +39,3 @@
 [context.deploy-preview]
   # PR previews use Demo Mode (no real auth - see Section 13.2)
   environment = { VITE_ENV = "preview", VITE_DEMO_MODE = "true" }
-

@@ -5,9 +5,15 @@ export function AccessDeniedPage() {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Navigate anyway to ensure user can retry login
+      navigate('/login', { replace: true });
+    }
   };
 
   return (

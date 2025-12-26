@@ -30,11 +30,10 @@ Before starting development, ensure you have:
    pnpm install
    ```
 
-2. **Set up environment variables:**
-   ```bash
-   cp apps/precedent-search/.env.example apps/precedent-search/.env.local
-   # Edit .env.local with your Kinde credentials
-   ```
+2. **Verify environment variables:**
+   - `.env.local` file exists in `apps/precedent-search/` (already configured)
+   - Contains Kinde credentials (VITE_KINDE_DOMAIN, VITE_KINDE_CLIENT_ID, etc.)
+   - If missing, copy from `.env.example` and configure with your Kinde tenant credentials
 
 3. **Start development server:**
    ```bash
@@ -130,7 +129,7 @@ VITE_DEMO_MODE=false
 3. **Access Control:**
    - ✅ Allowed domain → Access granted, redirected to `/`
    - ❌ Other domains → Redirected to `/access-denied`
-4. **Session Persistence:** Kinde SDK handles session persistence via secure cookies (tokens remain in memory)
+4. **Session Persistence:** Kinde SDK manages auth state; access tokens are kept in memory by default (refresh-token behavior depends on your tenant configuration).
 
 ## Routes
 
@@ -169,7 +168,7 @@ Configure the following environment variables in Netlify dashboard:
 - Same as production, but with staging URLs and Kinde tenant
 
 **Preview (PR previews):**
-- `VITE_DEMO_MODE` = `true` (uses MSW mocks, no real auth)
+- `VITE_DEMO_MODE` = `true` (bypasses real auth)
 
 ## Development Notes
 
@@ -232,4 +231,3 @@ Ensure all required environment variables are set in `.env.local`:
 ## License
 
 Private - VNlaw Internal Use Only
-

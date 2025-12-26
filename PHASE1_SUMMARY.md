@@ -27,7 +27,8 @@
 - ✅ Callback handler (`/callback`) for OAuth redirect
 - ✅ Domain restriction check (`@vnlaw.com.vn` only)
 - ✅ Access denied page (`/access-denied`) for unauthorized users
-- ✅ Session persistence via Kinde SDK (tokens in memory)
+- ✅ Session managed by Kinde SDK (tokens in memory)
+- ✅ Demo Mode (`VITE_DEMO_MODE=true`) bypasses real auth (for deploy previews)
 
 ### 5. Layout Components
 - ✅ `Layout` component with header
@@ -47,6 +48,7 @@
   - Environment variables documentation
   - Deployment instructions
   - Troubleshooting guide
+- ✅ `apps/precedent-search/.env.example` template added
 
 ## File Structure
 
@@ -77,6 +79,9 @@ vnlaw-webapps/
 ├── packages/
 │   └── auth/
 │       ├── src/
+│       │   ├── context.ts            # Auth context (real + demo)
+│       │   ├── env.ts                # Env parsing + demo mode flag
+│       │   ├── import-meta.d.ts      # `import.meta.env` typing for package
 │       │   ├── provider.tsx           # KindeProvider wrapper
 │       │   ├── hooks.ts               # useAuth hook
 │       │   ├── guards.tsx             # ProtectedRoute component
@@ -97,43 +102,41 @@ vnlaw-webapps/
 
 ## Environment Variables Required
 
-Create `apps/precedent-search/.env.local`:
+The `.env.local` file already exists in `apps/precedent-search/` and is configured with Kinde credentials.
 
-```bash
-VITE_KINDE_DOMAIN=your-tenant.kinde.com
-VITE_KINDE_CLIENT_ID=your-client-id
-VITE_KINDE_REDIRECT_URI=http://localhost:5173/callback
-VITE_KINDE_LOGOUT_URI=http://localhost:5173
-VITE_ALLOWED_DOMAIN=vnlaw.com.vn
-VITE_API_BASE_URL=https://api.vnlaw.app
-VITE_DEMO_MODE=false
-```
+**Current configuration:**
+- `VITE_KINDE_DOMAIN`: vnlaw.kinde.com
+- `VITE_KINDE_CLIENT_ID`: Configured
+- `VITE_KINDE_REDIRECT_URI`: http://localhost:5173/callback
+- `VITE_KINDE_LOGOUT_URI`: http://localhost:5173
+- `VITE_ALLOWED_DOMAIN`: vnlaw.com.vn
+- `VITE_API_BASE_URL`: https://api.vnlaw.app
+- `VITE_DEMO_MODE`: false
+
+**For new developers:** If setting up from scratch, create `apps/precedent-search/.env.local` with the above variables (see `.env.example` for template).
 
 ## Next Steps
 
-To get started:
+Setup is complete. Ready for testing:
 
-1. **Install dependencies:**
-   ```bash
-   pnpm install
-   ```
-
-2. **Configure Kinde tenant** (see README.md for detailed instructions)
-
-3. **Set up environment variables** in `apps/precedent-search/.env.local`
-
-4. **Start development server:**
+1. **Start development server:**
    ```bash
    pnpm dev
    ```
 
-5. **Verify authentication flow:**
+2. **Verify authentication flow:**
    - Visit `http://localhost:5173`
    - Should redirect to `/login`
    - Click "Sign in with Google"
    - Complete OAuth flow
    - Should redirect to `/callback` then `/` if domain is allowed
    - Should redirect to `/access-denied` if domain is not `@vnlaw.com.vn`
+
+3. **Test logout:**
+   - Click "Sign Out" in header
+   - Should redirect to `/login`
+
+**Note:** Environment variables and Kinde tenant are already configured. For new developers setting up from scratch, see README.md for setup instructions.
 
 ## Exit Criteria Status
 
@@ -166,4 +169,3 @@ pnpm dev
 - **API Client:** Not included in Phase 1 (Phase 2)
 - **Search/Chat:** Not included in Phase 1 (Phases 3-4)
 - **Testing:** Not included in Phase 1 (Phase 7)
-

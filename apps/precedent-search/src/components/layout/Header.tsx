@@ -5,9 +5,15 @@ export function Header() {
   const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+  const handleLogout = async () => {
+    try {
+      await logout();
+      navigate('/login', { replace: true });
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Navigate anyway to ensure user can retry login
+      navigate('/login', { replace: true });
+    }
   };
 
   if (!isAuthenticated) {
@@ -29,6 +35,7 @@ export function Header() {
                     src={user.picture}
                     alt={user.email}
                     className="h-8 w-8 rounded-full"
+                    referrerPolicy="no-referrer"
                   />
                 )}
                 <span className="text-sm text-gray-700 hidden sm:inline">
