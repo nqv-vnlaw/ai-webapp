@@ -18,7 +18,7 @@ MVP is accepted when:
 |---|---------|--------------|--------|
 | 1 | Domain-restricted login | FR-AUTH-01, FR-AUTH-02 | ✅ |
 | 2 | Session persistence | FR-AUTH-03 | ✅ |
-| 3 | Token-based API auth | FR-AUTH-04 | ☐ |
+| 3 | Token-based API auth | FR-AUTH-04 | ✅ |
 | 4 | Search with precedent scope | FR-SEARCH-01, FR-SEARCH-02, FR-SEARCH-03 | ☐ |
 | 5 | Search results display | FR-SEARCH-04 | ☐ |
 | 6 | Search pagination | FR-SEARCH-05 | ☐ |
@@ -30,9 +30,9 @@ MVP is accepted when:
 | 12 | Conversation state | FR-CHAT-04 | ☐ |
 | 13 | Regenerate answer | FR-CHAT-05 | ☐ |
 | 14 | Copy/export | FR-CHAT-06 | ☐ |
-| 15 | Automatic retry | FR-ERR-01 | ☐ |
-| 16 | Retry UI | FR-ERR-02 | ☐ |
-| 17 | Manual retry | FR-ERR-03 | ☐ |
+| 15 | Automatic retry | FR-ERR-01 | ✅ |
+| 16 | Retry UI | FR-ERR-02 | ✅ |
+| 17 | Manual retry | FR-ERR-03 | ✅ |
 | 18 | Feedback buttons | FR-FB-01 | ☐ |
 | 19 | PII protection | FR-FB-02 | ☐ |
 

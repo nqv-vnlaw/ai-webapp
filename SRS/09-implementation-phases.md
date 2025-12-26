@@ -217,16 +217,16 @@ None (auth only)
 **Prerequisites:** Phase 1 complete
 
 **Tasks (in order):**
-- [ ] Create `packages/api-client` package
-- [ ] Define TypeScript interfaces for all API requests/responses
-- [ ] Implement base fetch wrapper with Kinde token injection
-- [ ] Add `X-Session-Id` header generation and persistence
-- [ ] Implement standard error response handling
-- [ ] Create retry logic with exponential backoff
-- [ ] Add circuit breaker pattern
-- [ ] Set up TanStack Query provider and configuration
-- [ ] Create API hooks: `useSearch`, `useChat` (note: `useChatStream` is post-MVP)
-- [ ] Add rate limit header parsing and display
+- [x] Create `packages/api-client` package
+- [x] Define TypeScript interfaces for all API requests/responses
+- [x] Implement base fetch wrapper with Kinde token injection
+- [x] Add `X-Session-Id` header generation and persistence
+- [x] Implement standard error response handling
+- [x] Create retry logic with exponential backoff
+- [x] Add circuit breaker pattern
+- [x] Set up TanStack Query provider and configuration
+- [x] Create API hooks: `useSearch`, `useChat` (note: `useChatStream` is post-MVP)
+- [x] Add rate limit header parsing and display
 
 **Key Files to Create:**
 ```
@@ -244,11 +244,11 @@ packages/api-client/
 ```
 
 **Exit Criteria:**
-- [ ] API client sends Kinde token in `Authorization` header
-- [ ] API client sends `X-Session-Id` on every request
-- [ ] Error responses are parsed into typed objects
-- [ ] Retry logic works for 503/504 errors
-- [ ] Circuit breaker opens after 5 consecutive failures
+- [x] API client sends Kinde token in `Authorization` header
+- [x] API client sends `X-Session-Id` on every request
+- [x] Error responses are parsed into typed objects
+- [x] Retry logic works for 503/504 errors
+- [x] Circuit breaker opens after 5 consecutive failures
 
 **Requirement Coverage:** FR-AUTH-04, FR-ERR-01, FR-ERR-02, FR-ERR-03
 
@@ -274,10 +274,10 @@ Create typed API client with error handling
 - POST /v1/chat/stream (types only)
 
 ## Acceptance Checks
-- [ ] API client injects Authorization header
-- [ ] X-Session-Id generated and persisted
-- [ ] Retry logic for 503/504 errors
-- [ ] Circuit breaker opens after 5 failures
+- [x] API client injects Authorization header
+- [x] X-Session-Id generated and persisted
+- [x] Retry logic for 503/504 errors
+- [x] Circuit breaker opens after 5 failures
 
 ## Tests Added
 - [ ] API client unit tests (80% coverage)
