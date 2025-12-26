@@ -6,8 +6,9 @@
   "scripts": {
     "build": "pnpm --filter @vnlaw/precedent-search build",
     "dev": "pnpm --filter @vnlaw/precedent-search dev",
-    "lint": "pnpm --filter @vnlaw/precedent-search lint && pnpm --filter @vnlaw/auth lint",
-    "typecheck": "pnpm --filter @vnlaw/precedent-search typecheck && pnpm --filter @vnlaw/auth typecheck",
+    "lint": "pnpm --filter @vnlaw/precedent-search lint && pnpm --filter @vnlaw/auth lint && pnpm --filter @vnlaw/api-client lint && pnpm --filter @vnlaw/shared lint",
+    "typecheck": "pnpm --filter @vnlaw/precedent-search typecheck && pnpm --filter @vnlaw/auth typecheck && pnpm --filter @vnlaw/api-client typecheck && pnpm --filter @vnlaw/shared typecheck",
+    "generate:types": "npx openapi-typescript \"1. Research/openapi.yaml\" -o packages/shared/src/types/generated/api.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@kinde-oss/kinde-auth-react": "^5.10.1",
+    "@vnlaw/api-client": "workspace:*",
     "@vnlaw/auth": "workspace:*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

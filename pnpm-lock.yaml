@@ -23,6 +23,9 @@ importers:
       '@kinde-oss/kinde-auth-react':
         specifier: ^5.10.1
         version: 5.10.1(react-dom@18.3.1)(react@18.3.1)
+      '@vnlaw/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@vnlaw/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -76,6 +79,25 @@ importers:
         specifier: ^5.0.8
         version: 5.4.21(@types/node@20.19.27)
 
+  packages/api-client:
+    dependencies:
+      '@vnlaw/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^6.14.0
+        version: 6.21.0(@typescript-eslint/parser@6.21.0)(eslint@8.57.1)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^6.14.0
+        version: 6.21.0(eslint@8.57.1)(typescript@5.9.3)
+      eslint:
+        specifier: ^8.55.0
+        version: 8.57.1
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+
   packages/auth:
     dependencies:
       '@kinde-oss/kinde-auth-react':
@@ -109,6 +131,21 @@ importers:
       eslint-plugin-react-hooks:
         specifier: ^4.6.0
         version: 4.6.2(eslint@8.57.1)
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+
+  packages/shared:
+    devDependencies:
+      '@typescript-eslint/eslint-plugin':
+        specifier: ^6.14.0
+        version: 6.21.0(@typescript-eslint/parser@6.21.0)(eslint@8.57.1)(typescript@5.9.3)
+      '@typescript-eslint/parser':
+        specifier: ^6.14.0
+        version: 6.21.0(eslint@8.57.1)(typescript@5.9.3)
+      eslint:
+        specifier: ^8.55.0
+        version: 8.57.1
       typescript:
         specifier: ^5.3.3
         version: 5.9.3
