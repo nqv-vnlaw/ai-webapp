@@ -172,10 +172,11 @@ Configure the following environment variables in Netlify dashboard:
 
 ## Development Notes
 
-### Phase 1 Scope
+### Implementation Status
 
-This implementation covers **Phase 1: Project Scaffolding** only:
+This implementation covers **Phases 1-4** of the VNlaw Web Apps project:
 
+**Phase 1: Project Scaffolding** ✅
 - ✅ Monorepo structure with pnpm workspaces
 - ✅ Vite + React + TypeScript app
 - ✅ Tailwind CSS configured
@@ -185,12 +186,31 @@ This implementation covers **Phase 1: Project Scaffolding** only:
 - ✅ Protected routes
 - ✅ Netlify deployment configuration
 
-**Not included in Phase 1:**
-- API client (Phase 2)
-- Search feature (Phase 3)
-- Chat feature (Phase 4)
-- Error handling & feedback (Phase 5)
-- Testing setup (Phase 7)
+**Phase 2: API Client & Core Infrastructure** ✅
+- ✅ Typed API client with authentication headers
+- ✅ Retry logic with exponential backoff
+- ✅ Circuit breaker pattern
+- ✅ TanStack Query integration
+- ✅ Rate limit header parsing
+
+**Phase 3: Search Feature** ✅
+- ✅ Search input with validation
+- ✅ Scope selector (precedent only for MVP)
+- ✅ Search results display
+- ✅ Pagination support
+- ✅ URL state synchronization
+
+**Phase 4: Chat Feature (Non-Streaming MVP)** ✅
+- ✅ Chat UI components
+- ✅ In-memory conversation state
+- ✅ Citations panel
+- ✅ Regenerate, copy, and export functionality
+- ✅ Error handling and retry UX
+
+**Not yet implemented:**
+- Error handling & feedback UI (Phase 5)
+- Responsive design polish (Phase 6)
+- Testing & quality gates (Phase 7)
 
 ### Code Quality
 

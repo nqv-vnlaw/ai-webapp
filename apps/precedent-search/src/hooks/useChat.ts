@@ -195,6 +195,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
         });
       }
 
+      // Trim to maxItems: 50 per OpenAPI spec (keep most recent messages)
+      // Reference: OpenAPI spec ChatRequest.messages maxItems: 50
+      const MAX_MESSAGES = 50;
+      if (messagesToSend.length > MAX_MESSAGES) {
+        messagesToSend = messagesToSend.slice(-MAX_MESSAGES);
+      }
+
       return {
         conversationId: state.conversationId || null,
         message: userMessage,
@@ -228,14 +235,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
           };
         }
       } else {
-        // Add user message (if not regenerating)
-        if (lastRequestRef.current && !lastRequestRef.current.regenerate) {
-          const userMessage = lastRequestRef.current.message;
-          newMessages.push({
-            role: 'user',
-            content: userMessage,
-          });
-        }
+        // Note: User message was already added to state in sendMessage before API call
+        // (see sendMessage implementation below). Only add assistant response here.
 
         // Add assistant response
         newMessages.push({
@@ -276,11 +277,47 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     async (message: string, scope: Scope = lastScopeRef.current) => {
       lastScopeRef.current = scope;
 
+      // Add user message to state immediately (optimistic update)
+      // This improves UX: user sees their message right away, even if API fails
+      // Reference: SRS §4.2.3 - better retry/recovery UX
+      setState((prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            role: 'user',
+            content: message,
+          },
+        ],
+      }));
+
       const request = buildChatRequest(message, scope, false, false);
       lastRequestRef.current = request;
 
-      const response = await chatMutation.mutateAsync(request);
-      handleSuccess(response);
+      try {
+        const response = await chatMutation.mutateAsync(request);
+        handleSuccess(response);
+      } catch (error) {
+        // On error, remove the optimistic user message if API call failed
+        // This allows retry without duplicate user messages
+        setState((prev) => {
+          const newMessages = [...prev.messages];
+          // Remove last message if it's the user message we just added
+          if (
+            newMessages.length > 0 &&
+            newMessages[newMessages.length - 1].role === 'user' &&
+            newMessages[newMessages.length - 1].content === message
+          ) {
+            newMessages.pop();
+          }
+          return {
+            ...prev,
+            messages: newMessages,
+          };
+        });
+        // Re-throw to let caller handle error
+        throw error;
+      }
     },
     [buildChatRequest, chatMutation, handleSuccess]
   );

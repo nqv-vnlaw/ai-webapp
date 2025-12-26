@@ -112,12 +112,12 @@ export function ChatInput({
         }
 
         onSubmit(trimmedValue);
-        // Clear input after submit
-        onChange('');
+        // Note: Input clearing is handled by parent component (ChatContainer)
+        // Parent clears only on success, not on error, for better retry UX
       }
       // Shift+Enter: Allow new line (default behavior)
     },
-    [disabled, isValid, trimmedValue, minLength, maxLength, onSubmit, onChange]
+    [disabled, isValid, trimmedValue, minLength, maxLength, onSubmit]
   );
 
   const handleSubmit = useCallback(
@@ -139,9 +139,10 @@ export function ChatInput({
       }
 
       onSubmit(trimmedValue);
-      onChange('');
+      // Note: Input clearing is handled by parent component (ChatContainer)
+      // Parent clears only on success, not on error, for better retry UX
     },
-    [disabled, isValid, trimmedValue, minLength, maxLength, onSubmit, onChange]
+    [disabled, isValid, trimmedValue, minLength, maxLength, onSubmit]
   );
 
   // Determine input border color based on validation

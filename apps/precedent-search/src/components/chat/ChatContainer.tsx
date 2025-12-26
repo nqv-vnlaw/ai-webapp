@@ -54,9 +54,13 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     async (message: string) => {
       try {
         await sendMessage(message, scope);
-        setInputValue(''); // Clear input on success
+        // Clear input only on success (not on error)
+        // This improves UX: user can retry without retyping
+        // Reference: SRS §4.2.3 - better retry/recovery UX
+        setInputValue('');
       } catch {
         // Error is handled by hook state
+        // Input is NOT cleared on error, allowing user to retry easily
       }
     },
     [sendMessage, scope]
@@ -71,11 +75,8 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
   }, [regenerateLast]);
 
   const handleCopy = useCallback(async () => {
-    const success = await copyLastAnswer();
-    if (success) {
-      // Could show a toast notification here
-      console.log('Answer copied to clipboard');
-    }
+    await copyLastAnswer();
+    // Could show a toast notification here in the future
   }, [copyLastAnswer]);
 
   const handleExport = useCallback(() => {
