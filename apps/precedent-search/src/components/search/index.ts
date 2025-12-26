@@ -22,3 +22,6 @@ export type { SearchSkeletonProps } from './SearchSkeleton';
 export { SearchResultCard } from './SearchResultCard';
 export type { SearchResultCardProps } from './SearchResultCard';
 
+export { RecentSearches } from './RecentSearches';
+export type { RecentSearchesProps } from './RecentSearches';
+

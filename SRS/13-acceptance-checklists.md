@@ -6,7 +6,8 @@
 ## Current Implementation Status (Codebase)
 - Phase 1 (Scaffolding): ✅ complete
 - Phase 2 (API client & TanStack Query wiring): ✅ complete
-- Phase 3+ (Search/Chat UI and beyond): ☐ not started
+- Phase 3 (Search Feature): ✅ complete (2025-12-26)
+- Phase 4+ (Chat UI and beyond): ☐ not started
 
 ## 15. MVP Acceptance Criteria (App #1: Precedent Search Bot Web)
 MVP is accepted when:
@@ -27,11 +28,11 @@ MVP is accepted when:
 | 1 | Domain-restricted login | FR-AUTH-01, FR-AUTH-02 | ✅ |
 | 2 | Session persistence | FR-AUTH-03 | ✅ |
 | 3 | Token-based API auth | FR-AUTH-04 | ✅ |
-| 4 | Search with precedent scope | FR-SEARCH-01, FR-SEARCH-02, FR-SEARCH-03 | ☐ |
-| 5 | Search results display | FR-SEARCH-04 | ☐ |
-| 6 | Search pagination | FR-SEARCH-05 | ☐ |
-| 7 | Empty state handling | FR-SEARCH-06 | ☐ |
-| 8 | Query validation | FR-SEARCH-07 | ☐ |
+| 4 | Search with precedent scope | FR-SEARCH-01, FR-SEARCH-02, FR-SEARCH-03 | ✅ |
+| 5 | Search results display | FR-SEARCH-04 | ✅ |
+| 6 | Search pagination | FR-SEARCH-05 | ✅ |
+| 7 | Empty state handling | FR-SEARCH-06 | ✅ |
+| 8 | Query validation | FR-SEARCH-07 | ✅ |
 | 9 | Chat question input | FR-CHAT-01 | ☐ |
 | 10 | Chat answer display | FR-CHAT-02 | ☐ |
 | 11 | Citations display | FR-CHAT-03 | ☐ |

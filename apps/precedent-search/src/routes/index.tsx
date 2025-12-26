@@ -3,11 +3,15 @@ import {
   SearchInput,
   ScopeSelector,
   SearchResults,
+  SearchEmpty,
+  RecentSearches,
 } from '../components/search';
-import { useSearchParams } from '../hooks';
+import { useSearchParams, useRecentSearches } from '../hooks';
 
 export function IndexPage() {
   const { query, scope, setScope, setSearchParams } = useSearchParams();
+  const { searches, enabled, addSearch, clearSearches, setEnabled } =
+    useRecentSearches();
   // Local draft state for input (prevents URL updates on every keystroke)
   const [draftQuery, setDraftQuery] = useState(query);
 
@@ -15,6 +19,14 @@ export function IndexPage() {
   useEffect(() => {
     setDraftQuery(query);
   }, [query]);
+
+  // Add to recent searches when query is submitted
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed && trimmed.length <= 500) {
+      addSearch(trimmed);
+    }
+  }, [query, addSearch]);
 
   const handleQueryChange = (newQuery: string) => {
     // Update local draft only (doesn't trigger URL update)
@@ -31,6 +43,18 @@ export function IndexPage() {
     // Update URL when scope changes
     setScope(newScope);
   };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    // Update URL with suggestion (push to history to trigger search)
+    setSearchParams(suggestion, scope, true);
+  };
+
+  const handleRecentSearchClick = (preview: string) => {
+    // Use preview as the search query (it's already trimmed and max 50 chars)
+    setSearchParams(preview, scope, true);
+  };
+
+  const isQueryEmpty = !query.trim();
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -56,11 +80,23 @@ export function IndexPage() {
             onSubmit={handleQuerySubmit}
             isLoading={false}
           />
+          {/* Recent Searches */}
+          <RecentSearches
+            searches={searches}
+            enabled={enabled}
+            onEnabledChange={setEnabled}
+            onClear={clearSearches}
+            onSearchClick={handleRecentSearchClick}
+          />
         </div>
       </div>
 
       {/* Results Area */}
-      <SearchResults query={query} scope={scope} />
+      {isQueryEmpty ? (
+        <SearchEmpty onSuggestionClick={handleSuggestionClick} />
+      ) : (
+        <SearchResults query={query} scope={scope} />
+      )}
 
       {/* Chat Placeholder Section */}
       <div className="mt-12 pt-8 border-t border-gray-200">
@@ -76,4 +112,3 @@ export function IndexPage() {
     </div>
   );
 }
-

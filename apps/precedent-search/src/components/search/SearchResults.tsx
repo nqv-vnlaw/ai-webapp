@@ -2,15 +2,19 @@
  * SearchResults Component
  *
  * Container component for displaying search results.
- * Integrates with useSearch hook to execute search API calls.
+ * Integrates with useInfiniteSearch hook for paginated search API calls.
  *
- * Reference: FR-SEARCH-03, FR-SEARCH-04
+ * Reference: FR-SEARCH-03, FR-SEARCH-04, FR-SEARCH-05
  */
 
-import { useSearch } from '@vnlaw/api-client';
-import type { Scope } from '@vnlaw/api-client';
+import { useState } from 'react';
+import type { Scope, SearchResponse } from '@vnlaw/api-client';
 import { SearchSkeleton } from './SearchSkeleton';
 import { SearchEmpty } from './SearchEmpty';
+import { SearchResultCard } from './SearchResultCard';
+import { useInfiniteSearch } from '../../hooks/useInfiniteSearch';
+
+const MAX_QUERY_LENGTH = 500;
 
 export interface SearchResultsProps {
   /**
@@ -27,17 +31,56 @@ export interface SearchResultsProps {
 export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
   // Build search request
   const trimmedQuery = query.trim();
-  const isValidQuery = trimmedQuery.length > 0;
+  const isTooLong = trimmedQuery.length > MAX_QUERY_LENGTH;
+  const isValidQuery = trimmedQuery.length > 0 && !isTooLong;
 
-  const { data, error, isLoading } = useSearch({
-    request: {
-      query: trimmedQuery,
-      scope: 'precedent', // MVP: always 'precedent' (scope prop reserved for future use)
-      pageSize: 10,
-      cursor: null, // First page
-    },
-    enabled: isValidQuery, // Only search when query is non-empty
+  const infiniteQueryResult = useInfiniteSearch({
+    query: trimmedQuery,
+    scope: 'precedent', // MVP: always 'precedent'
+    pageSize: 10,
+    enabled: isValidQuery, // Only search when query is valid
   });
+
+  const {
+    data,
+    error,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = infiniteQueryResult;
+
+  // Prevent double-click spamming
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Query validation (FR-SEARCH-07): do not call the API for invalid queries
+  if (isTooLong) {
+    return (
+      <div className="mt-8">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-red-900 mb-2">
+            Query Too Long
+          </h3>
+          <p className="text-red-700">
+            Queries must be {MAX_QUERY_LENGTH} characters or less. Please shorten
+            your query and try again.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const handleLoadMore = async () => {
+    if (isFetchingNextPage || isLoadingMore || !hasNextPage) {
+      return;
+    }
+    setIsLoadingMore(true);
+    try {
+      await fetchNextPage();
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   // Loading state
   if (isLoading) {
@@ -64,14 +107,22 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
   }
 
   // Empty query state (no search executed)
+  // Note: This is defensive code - IndexPage now handles empty query by showing SearchEmpty
+  // This return null should not be reached in normal flow, but kept for safety
   if (!isValidQuery) {
-    return null; // Don't show anything when query is empty
+    return null;
   }
 
   // Success state
   if (data) {
-    const hasResults = data.results && data.results.length > 0;
-    const hasMore = !!data.nextCursor;
+    // Flatten results from all pages
+    const allResults = data.pages.flatMap((page: SearchResponse) => page.results);
+    const hasResults = allResults.length > 0;
+
+    // Get status and warnings from first page (all pages should have same status)
+    const firstPage = data.pages[0];
+    const isPartial = firstPage.status === 'partial';
+    const hasWarnings = isPartial && firstPage.warnings && firstPage.warnings.length > 0;
 
     if (!hasResults) {
       return <SearchEmpty query={trimmedQuery} />;
@@ -82,31 +133,91 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
           Results
         </h2>
-        <div className="space-y-4">
-          {/* Results list placeholder - will be replaced with SearchResultCard in next phase */}
-          <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-            <p>
-              Found {data.results.length} result{data.results.length !== 1 ? 's' : ''}
-            </p>
-            <p className="mt-2 text-sm">
-              Results list will be rendered here in next phase
-            </p>
-          </div>
 
-          {/* Load more placeholder */}
-          {hasMore && (
-            <div className="text-center">
-              <button
-                type="button"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                disabled
-                aria-label="Load more results (coming in next phase)"
+        {/* Partial status warnings banner */}
+        {hasWarnings && firstPage.warnings && (
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <svg
+                className="h-5 w-5 text-yellow-600 mt-0.5 flex-shrink-0"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden="true"
               >
-                Load more (placeholder)
-              </button>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
+              </svg>
+              <div className="flex-1">
+                <h3 className="text-sm font-medium text-yellow-800 mb-1">
+                  Some results may be missing
+                </h3>
+                <ul className="text-sm text-yellow-700 space-y-1">
+                  {firstPage.warnings.map((warning: string, index: number) => (
+                    <li key={index}>• {warning}</li>
+                  ))}
+                </ul>
+              </div>
             </div>
-          )}
+          </div>
+        )}
+
+        {/* Results list */}
+        <div className="space-y-4">
+          {allResults.map((result: SearchResponse['results'][number], index: number) => (
+            <SearchResultCard key={`${result.url}-${index}`} result={result} />
+          ))}
         </div>
+
+        {/* Load more button */}
+        {hasNextPage && (
+          <div className="mt-6 text-center">
+            <button
+              type="button"
+              onClick={handleLoadMore}
+              disabled={isFetchingNextPage || isLoadingMore}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              aria-label={
+                isFetchingNextPage || isLoadingMore
+                  ? 'Loading more results...'
+                  : 'Load more results'
+              }
+            >
+              {isFetchingNextPage || isLoadingMore ? (
+                <span className="flex items-center gap-2">
+                  <svg
+                    className="animate-spin h-4 w-4"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    ></circle>
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    ></path>
+                  </svg>
+                  Loading...
+                </span>
+              ) : (
+                'Load more'
+              )}
+            </button>
+          </div>
+        )}
       </div>
     );
   }
@@ -114,4 +225,3 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
   // Fallback (should not reach here)
   return null;
 }
-
