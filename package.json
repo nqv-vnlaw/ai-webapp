@@ -8,14 +8,27 @@
     "dev": "pnpm --filter @vnlaw/precedent-search dev",
     "lint": "pnpm --filter @vnlaw/precedent-search lint && pnpm --filter @vnlaw/auth lint && pnpm --filter @vnlaw/api-client lint && pnpm --filter @vnlaw/shared lint",
     "typecheck": "pnpm --filter @vnlaw/precedent-search typecheck && pnpm --filter @vnlaw/auth typecheck && pnpm --filter @vnlaw/api-client typecheck && pnpm --filter @vnlaw/shared typecheck",
+    "test": "pnpm --filter @vnlaw/precedent-search test:run",
+    "test:ui": "pnpm --filter @vnlaw/precedent-search test:ui",
+    "test:coverage": "pnpm --filter @vnlaw/precedent-search test:coverage",
+    "e2e": "pnpm --filter @vnlaw/precedent-search e2e",
+    "e2e:ui": "pnpm --filter @vnlaw/precedent-search e2e:ui",
     "generate:types": "npx openapi-typescript \"1. Research/openapi.yaml\" -o packages/shared/src/types/generated/api.ts",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.1",
+    "@testing-library/user-event": "^14.6.1",
     "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "1.6.0",
+    "@vitest/ui": "1.6.0",
+    "happy-dom": "^20.0.11",
+    "jsdom": "^27.4.0",
     "prettier": "^3.2.5",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "1.6.0"
   },
   "engines": {
     "node": ">=20.0.0",
@@ -23,4 +36,3 @@
   },
   "packageManager": "pnpm@8.15.0"
 }
-

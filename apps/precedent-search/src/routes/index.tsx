@@ -6,6 +6,7 @@ import {
   SearchEmpty,
   RecentSearches,
 } from '../components/search';
+import { ChatContainer } from '../components/chat';
 import { useSearchParams, useRecentSearches } from '../hooks';
 
 export function IndexPage() {
@@ -98,15 +99,13 @@ export function IndexPage() {
         <SearchResults query={query} scope={scope} />
       )}
 
-      {/* Chat Placeholder Section */}
+      {/* Chat Section */}
       <div className="mt-12 pt-8 border-t border-gray-200">
-        <div className="bg-gray-50 rounded-lg p-6 text-center">
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">
-            Chat Feature
-          </h2>
-          <p className="text-gray-600">
-            Chat functionality will be available in Phase 4
-          </p>
+        <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          Ask a Question
+        </h2>
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm h-[600px]">
+          <ChatContainer scope={scope} />
         </div>
       </div>
     </div>

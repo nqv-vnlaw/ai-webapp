@@ -13,3 +13,12 @@ export type { UseInfiniteSearchOptions } from './useInfiniteSearch';
 export { useRecentSearches } from './useRecentSearches';
 export type { RecentSearch } from './useRecentSearches';
 
+export { useChat } from './useChat';
+export type {
+  UseChatReturn,
+  UseChatOptions,
+  ChatMessage,
+  ConversationState,
+  ChatError,
+} from './useChat';
+

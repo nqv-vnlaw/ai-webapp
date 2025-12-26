@@ -7,7 +7,7 @@
 - Phase 1 (Scaffolding): ✅ complete
 - Phase 2 (API client & TanStack Query wiring): ✅ complete
 - Phase 3 (Search Feature): ✅ complete (2025-12-26)
-- Phase 4+ (Chat UI and beyond): ☐ not started
+- Phase 4 (Chat Feature): ✅ complete (2025-12-26)
 
 ## 15. MVP Acceptance Criteria (App #1: Precedent Search Bot Web)
 MVP is accepted when:
@@ -33,12 +33,12 @@ MVP is accepted when:
 | 6 | Search pagination | FR-SEARCH-05 | ✅ |
 | 7 | Empty state handling | FR-SEARCH-06 | ✅ |
 | 8 | Query validation | FR-SEARCH-07 | ✅ |
-| 9 | Chat question input | FR-CHAT-01 | ☐ |
-| 10 | Chat answer display | FR-CHAT-02 | ☐ |
-| 11 | Citations display | FR-CHAT-03 | ☐ |
-| 12 | Conversation state | FR-CHAT-04 | ☐ |
-| 13 | Regenerate answer | FR-CHAT-05 | ☐ |
-| 14 | Copy/export | FR-CHAT-06 | ☐ |
+| 9 | Chat question input | FR-CHAT-01 | ✅ |
+| 10 | Chat answer display | FR-CHAT-02 | ✅ |
+| 11 | Citations display | FR-CHAT-03 | ✅ |
+| 12 | Conversation state | FR-CHAT-04 | ✅ |
+| 13 | Regenerate answer | FR-CHAT-05 | ✅ |
+| 14 | Copy/export | FR-CHAT-06 | ✅ |
 | 15 | Automatic retry | FR-ERR-01 | ✅ |
 | 16 | Retry UI | FR-ERR-02 | ☐ |
 | 17 | Manual retry | FR-ERR-03 | ☐ |

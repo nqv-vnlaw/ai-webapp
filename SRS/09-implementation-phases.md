@@ -388,17 +388,17 @@ pnpm build && pnpm lint && pnpm typecheck  # ✅ All passing
 **Note:** SSE streaming (`/v1/chat/stream`) is deferred to post-MVP. MVP uses the synchronous `/v1/chat` endpoint.
 
 **Tasks (in order):**
-- [ ] Create `ChatContainer` component
-- [ ] Create `ChatMessage` component (user/assistant variants)
-- [ ] Create `ChatInput` component with submit handling
-- [ ] Implement loading state with "Generating answer..." indicator
-- [ ] Create `CitationsPanel` component (see Section 5.3.1 for rendering rules)
-- [ ] Create `CitationCard` component
-- [ ] Add conversation state management (in-memory)
-- [ ] Implement "Regenerate" button functionality
-- [ ] Add copy-to-clipboard for answers
-- [ ] Create markdown export functionality
-- [ ] Handle API errors gracefully (show error with retry option)
+- [x] Create `ChatContainer` component
+- [x] Create `ChatMessage` component (user/assistant variants)
+- [x] Create `ChatInput` component with submit handling
+- [x] Implement loading state with "Generating answer..." indicator
+- [x] Create `CitationsPanel` component (see Section 5.3.1 for rendering rules)
+- [x] Create `CitationCard` component
+- [x] Add conversation state management (in-memory)
+- [x] Implement "Regenerate" button functionality
+- [x] Add copy-to-clipboard for answers
+- [x] Create markdown export functionality
+- [x] Handle API errors gracefully (show error with retry option)
 
 **Key Files to Create:**
 ```
@@ -419,12 +419,12 @@ apps/precedent-search/src/
 ```
 
 **Exit Criteria:**
-- [ ] User can ask questions and see answers
-- [ ] Loading state shows "Generating answer..." during API call
-- [ ] Citations appear in sidebar after response received (deduplicated, ordered per Section 5.3.1)
-- [ ] "Regenerate" re-fetches the last answer
-- [ ] Copy button works for answer text
-- [ ] API errors show user-friendly message with retry option
+- [x] User can ask questions and see answers
+- [x] Loading state shows "Generating answer..." during API call
+- [x] Citations appear in sidebar after response received (deduplicated, ordered per Section 5.3.1)
+- [x] "Regenerate" re-fetches the last answer
+- [x] Copy button works for answer text
+- [x] API errors show user-friendly message with retry option
 
 **Requirement Coverage:** FR-CHAT-01 through FR-CHAT-06
 
