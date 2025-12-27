@@ -4,15 +4,23 @@
  * Container component for displaying search results.
  * Integrates with useInfiniteSearch hook for paginated search API calls.
  *
- * Reference: FR-SEARCH-03, FR-SEARCH-04, FR-SEARCH-05
+ * Reference: FR-SEARCH-03, FR-SEARCH-04, FR-SEARCH-05, FR-ERR-02, FR-ERR-03
  */
 
-import { useState } from 'react';
-import type { Scope, SearchResponse } from '@vnlaw/api-client';
+import { useState, useEffect } from 'react';
+import type { Scope, SearchResponse, ApiClientError } from '@vnlaw/api-client';
+import { useApiClient } from '@vnlaw/api-client';
 import { SearchSkeleton } from './SearchSkeleton';
 import { SearchEmpty } from './SearchEmpty';
 import { SearchResultCard } from './SearchResultCard';
 import { useInfiniteSearch } from '../../hooks/useInfiniteSearch';
+import { useRetryState } from '../../hooks/useRetryState';
+import {
+  RetryIndicator,
+  ManualRetryButton,
+  CircuitBreakerUI,
+} from '../error';
+import { useToast } from '../../contexts';
 
 const MAX_QUERY_LENGTH = 500;
 
@@ -34,6 +42,9 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
   const isTooLong = trimmedQuery.length > MAX_QUERY_LENGTH;
   const isValidQuery = trimmedQuery.length > 0 && !isTooLong;
 
+  // Generate request key for retry state tracking
+  const requestKey = `search:${trimmedQuery}:precedent`;
+
   const infiniteQueryResult = useInfiniteSearch({
     query: trimmedQuery,
     scope: 'precedent', // MVP: always 'precedent'
@@ -51,7 +62,89 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
     dataUpdatedAt,
     isStale,
     isFetching,
+    refetch,
   } = infiniteQueryResult;
+
+  const { showError } = useToast();
+  const client = useApiClient();
+
+  // Get circuit breaker state from API client
+  const circuitBreakerState = client.getCircuitBreakerState('/v1/search');
+  const apiError = error as ApiClientError | undefined;
+  const isCircuitBreakerError = apiError?.error?.code === 'SERVICE_UNAVAILABLE';
+
+  // Track retry state per request key
+  const retryState = useRetryState({
+    requestKey,
+    maxRetries: 3,
+    circuitBreaker: {
+      isOpen: isCircuitBreakerError || circuitBreakerState.isOpen,
+      recoveryTimeMs: isCircuitBreakerError
+        ? (apiError?.error?.retryAfterSeconds || 0) * 1000
+        : circuitBreakerState.recoveryTimeMs,
+    },
+  });
+
+  // Extract retryCount from API responses and update retry state
+  useEffect(() => {
+    if (data && data.pages.length > 0) {
+      // Get retryCount from the most recent page response
+      const lastPage = data.pages[data.pages.length - 1] as SearchResponse & {
+        _retryCount?: number;
+      };
+      if (lastPage._retryCount !== undefined) {
+        // Update retry state with actual retry count from API client
+        retryState.updateRetryCount(lastPage._retryCount);
+        if (lastPage._retryCount > 0) {
+          // If retries occurred, mark as retrying completed
+          retryState.endRetry();
+        }
+      }
+    }
+  }, [data, retryState]);
+
+  // Track retry state based on fetching status
+  useEffect(() => {
+    if (isFetching && error) {
+      // Retry in progress
+      if (!retryState.isRetrying) {
+        retryState.startRetry();
+      }
+    } else if (!isFetching && error) {
+      // Retry completed (failed)
+      if (retryState.isRetrying) {
+        retryState.endRetry();
+        // Check if max retries exceeded based on error
+        if (
+          apiError &&
+          apiError.error.retryable === true &&
+          retryState.retryCount >= retryState.maxRetries
+        ) {
+          retryState.setMaxExceeded();
+        }
+      }
+    } else if (!error && !isFetching) {
+      // Success - reset retry state
+      retryState.reset();
+    }
+  }, [error, isFetching, retryState, apiError]);
+
+  // Show toast for recoverable errors
+  useEffect(() => {
+    if (
+      apiError &&
+      (apiError.error?.retryable === true ||
+        (apiError.status >= 500 && apiError.status < 600)) &&
+      !retryState.maxRetriesExceeded &&
+      retryState.isRetrying &&
+      isFetching
+    ) {
+      showError(
+        apiError.message || 'Search failed. Retrying...',
+        apiError.requestId
+      );
+    }
+  }, [apiError, retryState.maxRetriesExceeded, retryState.isRetrying, isFetching, showError]);
 
   // Prevent double-click spamming
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -92,8 +185,52 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
 
   // Error state (no cached data available)
   if (error && !data) {
+      // Check if circuit breaker is open
+      if (retryState.circuitBreaker.isOpen) {
+        return (
+          <div className="mt-8">
+            <CircuitBreakerUI
+              isOpen={retryState.circuitBreaker.isOpen}
+              recoveryTimeMs={retryState.circuitBreaker.recoveryTimeMs}
+              onTryNow={async () => {
+                // Reset circuit breaker to allow immediate retry attempt
+                client.resetCircuitBreaker('/v1/search');
+                retryState.reset();
+                await refetch();
+              }}
+              isLoading={isFetching}
+            />
+          </div>
+        );
+      }
+
+    // Show manual retry button if max retries exceeded
+    if (retryState.maxRetriesExceeded) {
+      return (
+        <div className="mt-8">
+          <ManualRetryButton
+            onRetry={async () => {
+              retryState.reset();
+              await refetch();
+            }}
+            isLoading={isFetching}
+            error={error.message || 'Search failed after multiple attempts'}
+            requestId={error.requestId}
+          />
+        </div>
+      );
+    }
+
+    // Show retry indicator if retrying
     return (
-      <div className="mt-8">
+      <div className="mt-8 space-y-4">
+        {retryState.isRetrying && (
+          <RetryIndicator
+            isRetrying={retryState.isRetrying}
+            retryCount={retryState.retryCount}
+            maxRetries={retryState.maxRetries}
+          />
+        )}
         <div className="bg-red-50 border border-red-200 rounded-lg p-6">
           <h3 className="text-lg font-semibold text-red-900 mb-2">
             Search Error
@@ -149,6 +286,49 @@ export function SearchResults({ query, scope: _scope }: SearchResultsProps) {
         <h2 className="text-xl font-semibold text-gray-900 mb-4">
           Results
         </h2>
+
+        {/* Retry indicator during retries */}
+        {retryState.isRetrying && (
+          <div className="mb-4">
+            <RetryIndicator
+              isRetrying={retryState.isRetrying}
+              retryCount={retryState.retryCount}
+              maxRetries={retryState.maxRetries}
+            />
+          </div>
+        )}
+
+        {/* Circuit breaker UI */}
+        {retryState.circuitBreaker.isOpen && (
+          <div className="mb-4">
+            <CircuitBreakerUI
+              isOpen={retryState.circuitBreaker.isOpen}
+              recoveryTimeMs={retryState.circuitBreaker.recoveryTimeMs}
+              onTryNow={async () => {
+                // Reset circuit breaker to allow immediate retry attempt
+                client.resetCircuitBreaker('/v1/search');
+                retryState.reset();
+                await refetch();
+              }}
+              isLoading={isFetching}
+            />
+          </div>
+        )}
+
+        {/* Manual retry button after max retries */}
+        {retryState.maxRetriesExceeded && error && (
+          <div className="mb-4">
+            <ManualRetryButton
+              onRetry={async () => {
+                retryState.reset();
+                await refetch();
+              }}
+              isLoading={isFetching}
+              error={error.message || 'Search failed after multiple attempts'}
+              requestId={error.requestId}
+            />
+          </div>
+        )}
 
         {/* Stale cache warning (SRS §8.3) */}
         {showStaleCacheWarning && (

@@ -7,7 +7,20 @@
  * Reference: FR-ERR-02, FR-ERR-03
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+
+/**
+ * Global retry state storage per request key
+ * This allows multiple components to track retry state for the same request
+ */
+const retryStateStore = new Map<
+  string,
+  {
+    retryCount: number;
+    isRetrying: boolean;
+    maxRetriesExceeded: boolean;
+  }
+>();
 
 /**
  * Circuit breaker status
@@ -74,6 +87,12 @@ export interface RetryState {
  */
 export interface UseRetryStateOptions {
   /**
+   * Request key to track retry state per request (e.g., 'search:query123' or 'chat:conv456')
+   * If not provided, uses a default key (single instance per component)
+   */
+  requestKey?: string;
+
+  /**
    * Maximum number of retry attempts (default: 3)
    */
   maxRetries?: number;
@@ -97,6 +116,12 @@ export interface UseRetryStateReturn extends RetryState {
    * Circuit breaker status
    */
   circuitBreaker: CircuitBreakerStatus;
+
+  /**
+   * Update retry count from API response
+   * Use this to sync with retryCount from API client responses
+   */
+  updateRetryCount: (count: number) => void;
 }
 
 /**
@@ -110,7 +135,9 @@ const DEFAULT_CIRCUIT_BREAKER: CircuitBreakerStatus = {
 /**
  * useRetryState hook
  *
- * Tracks retry attempts for a request and provides circuit breaker integration.
+ * Tracks retry attempts per request key and provides circuit breaker integration.
+ * Uses a global store to track retry state per request key, allowing multiple
+ * components to share retry state for the same request.
  *
  * @param options - Retry state options
  * @returns Retry state and helpers
@@ -127,7 +154,10 @@ const DEFAULT_CIRCUIT_BREAKER: CircuitBreakerStatus = {
  *   startRetry,
  *   endRetry,
  *   reset,
- * } = useRetryState({ maxRetries: 3 });
+ * } = useRetryState({ 
+ *   requestKey: 'search:contract-law',
+ *   maxRetries: 3 
+ * });
  *
  * // Show retry indicator
  * {isRetrying && (
@@ -152,41 +182,96 @@ const DEFAULT_CIRCUIT_BREAKER: CircuitBreakerStatus = {
 export function useRetryState(
   options: UseRetryStateOptions = {}
 ): UseRetryStateReturn {
-  const { maxRetries = 3, circuitBreaker = DEFAULT_CIRCUIT_BREAKER } = options;
+  const {
+    requestKey = 'default',
+    maxRetries = 3,
+    circuitBreaker = DEFAULT_CIRCUIT_BREAKER,
+  } = options;
 
-  const [retryCount, setRetryCount] = useState(0);
-  const [isRetrying, setIsRetrying] = useState(false);
-  const [maxRetriesExceeded, setMaxRetriesExceededState] = useState(false);
+  // Get or create state for this request key
+  const getState = useCallback(() => {
+    if (!retryStateStore.has(requestKey)) {
+      retryStateStore.set(requestKey, {
+        retryCount: 0,
+        isRetrying: false,
+        maxRetriesExceeded: false,
+      });
+    }
+    return retryStateStore.get(requestKey)!;
+  }, [requestKey]);
+
+  // Use ref to track if we've initialized state for this key
+  const initializedRef = useRef(false);
+  if (!initializedRef.current) {
+    getState();
+    initializedRef.current = true;
+  }
+
+  const [stateVersion, setStateVersion] = useState(0);
+
+  // Force re-render when state changes
+  const updateState = useCallback(() => {
+    setStateVersion((prev) => prev + 1);
+  }, []);
+
+  const retryStateData = getState();
+  const retryCount = retryStateData.retryCount;
+  const isRetrying = retryStateData.isRetrying;
+  const maxRetriesExceeded = retryStateData.maxRetriesExceeded;
 
   const reset = useCallback(() => {
-    setRetryCount(0);
-    setIsRetrying(false);
-    setMaxRetriesExceededState(false);
-  }, []);
+    const currentState = getState();
+    currentState.retryCount = 0;
+    currentState.isRetrying = false;
+    currentState.maxRetriesExceeded = false;
+    updateState();
+  }, [getState, updateState]);
 
   const incrementRetry = useCallback(() => {
-    setRetryCount((prev) => {
-      const next = prev + 1;
-      if (next > maxRetries) {
-        setMaxRetriesExceededState(true);
-      }
-      return next;
-    });
-  }, [maxRetries]);
+    const currentState = getState();
+    currentState.retryCount += 1;
+    if (currentState.retryCount >= maxRetries) {
+      currentState.maxRetriesExceeded = true;
+    }
+    updateState();
+  }, [getState, maxRetries, updateState]);
 
   const startRetry = useCallback(() => {
-    setIsRetrying(true);
-  }, []);
+    const currentState = getState();
+    currentState.isRetrying = true;
+    updateState();
+  }, [getState, updateState]);
 
   const endRetry = useCallback(() => {
-    setIsRetrying(false);
-  }, []);
+    const currentState = getState();
+    currentState.isRetrying = false;
+    updateState();
+  }, [getState, updateState]);
 
   const setMaxExceeded = useCallback(() => {
-    setMaxRetriesExceededState(true);
-  }, []);
+    const currentState = getState();
+    currentState.maxRetriesExceeded = true;
+    updateState();
+  }, [getState, updateState]);
 
-  const state = useMemo<UseRetryStateReturn>(
+  /**
+   * Update retry count from API response
+   * This reflects the actual retry count from the API client's automatic retries
+   */
+  const updateRetryCount = useCallback(
+    (count: number) => {
+      const currentState = getState();
+      currentState.retryCount = count;
+      if (count >= maxRetries) {
+        currentState.maxRetriesExceeded = true;
+      }
+      updateState();
+    },
+    [getState, maxRetries, updateState]
+  );
+
+  // Include stateVersion in dependencies to trigger re-renders when state changes
+  const retryState = useMemo<UseRetryStateReturn>(
     () => ({
       retryCount,
       isRetrying,
@@ -198,6 +283,7 @@ export function useRetryState(
       startRetry,
       endRetry,
       setMaxExceeded,
+      updateRetryCount,
     }),
     [
       retryCount,
@@ -210,8 +296,10 @@ export function useRetryState(
       startRetry,
       endRetry,
       setMaxExceeded,
+      updateRetryCount,
+      stateVersion, // Include to trigger re-renders when state changes
     ]
   );
 
-  return state;
+  return retryState;
 }

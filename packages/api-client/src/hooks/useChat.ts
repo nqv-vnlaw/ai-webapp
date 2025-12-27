@@ -58,7 +58,11 @@ export function useChat(options: UseChatOptions = {}) {
   return useMutation({
     mutationFn: async (request: ChatRequest) => {
       const response = await client.post<ChatResponse>('/v1/chat', request);
-      return response.data;
+      // Return response with retryCount metadata for UI tracking
+      return {
+        ...response.data,
+        _retryCount: response.retryCount,
+      } as ChatResponse & { _retryCount: number };
     },
     ...mutationOptions,
   });

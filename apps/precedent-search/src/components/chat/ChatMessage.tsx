@@ -35,6 +35,12 @@ export interface ChatMessageProps {
   actions?: ReactNode;
 
   /**
+   * Feedback buttons for assistant messages (thumbs up/down)
+   * Only shown for assistant role
+   */
+  feedbackButtons?: ReactNode;
+
+  /**
    * Optional timestamp
    */
   timestamp?: Date | string;
@@ -45,6 +51,7 @@ export function ChatMessage({
   content,
   isLoading = false,
   actions,
+  feedbackButtons,
   timestamp,
 }: ChatMessageProps) {
   const isUser = role === 'user';
@@ -98,6 +105,13 @@ export function ChatMessage({
             </div>
           )}
         </div>
+
+        {/* Feedback buttons (only for assistant messages) */}
+        {isAssistant && !isLoading && feedbackButtons && (
+          <div className="flex items-center gap-2 text-sm mb-2">
+            {feedbackButtons}
+          </div>
+        )}
 
         {/* Actions (only for assistant messages) */}
         {isAssistant && !isLoading && actions && (

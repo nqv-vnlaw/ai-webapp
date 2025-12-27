@@ -453,6 +453,35 @@ export class ApiClient {
   ): Promise<ApiResponse<T>> {
     return this.request<T>('POST', path, body, options);
   }
+
+  /**
+   * Resets the circuit breaker for a specific endpoint
+   * 
+   * This allows manual recovery attempts (e.g., "Try Now" button)
+   * to force the circuit breaker into half-open state.
+   * 
+   * @param path - API path (e.g., '/v1/search')
+   */
+  resetCircuitBreaker(path: string): void {
+    const endpointKey = getEndpointKey(path);
+    this.circuitBreaker.reset(endpointKey);
+  }
+
+  /**
+   * Gets the circuit breaker state for a specific endpoint
+   * 
+   * @param path - API path (e.g., '/v1/search')
+   * @returns Circuit breaker state and time until retry
+   */
+  getCircuitBreakerState(path: string): {
+    isOpen: boolean;
+    recoveryTimeMs: number;
+  } {
+    const endpointKey = getEndpointKey(path);
+    const isOpen = this.circuitBreaker.isOpen(endpointKey);
+    const recoveryTimeMs = this.circuitBreaker.getTimeUntilRetry(endpointKey);
+    return { isOpen, recoveryTimeMs };
+  }
 }
 
 /**

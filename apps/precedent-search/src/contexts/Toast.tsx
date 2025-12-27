@@ -12,6 +12,7 @@ import {
   useContext,
   useState,
   useCallback,
+  useEffect,
   type ReactNode,
 } from 'react';
 import { ToastContainer, type ToastData } from '../components/error/ToastContainer';
@@ -183,13 +184,29 @@ export function ToastProvider({
     [showToast]
   );
 
-  const dismissToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((toast) => toast.id !== id));
-  }, []);
+  const dismissToast = useCallback(
+    (id: string) => {
+      setToasts((prev) => {
+        const filtered = prev.filter((toast) => toast.id !== id);
+        // Prune toasts beyond maxVisible to allow auto-dismiss of hidden toasts
+        return filtered.slice(-maxVisible);
+      });
+    },
+    [maxVisible]
+  );
 
   const dismissAll = useCallback(() => {
     setToasts([]);
   }, []);
+
+  // Auto-prune toasts beyond maxVisible when they exceed the limit
+  // This ensures hidden toasts can still auto-dismiss
+  useEffect(() => {
+    if (toasts.length > maxVisible) {
+      // Keep only the most recent maxVisible toasts
+      setToasts((prev) => prev.slice(-maxVisible));
+    }
+  }, [toasts.length, maxVisible]);
 
   const value: ToastContextValue = {
     showToast,

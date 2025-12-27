@@ -97,7 +97,11 @@ export function useInfiniteSearch(options: UseInfiniteSearchOptions) {
         cursor: pageParam ?? null,
       };
       const response = await client.post<SearchResponse>('/v1/search', request);
-      return response.data;
+      // Return response with retryCount metadata for UI tracking
+      return {
+        ...response.data,
+        _retryCount: response.retryCount,
+      } as SearchResponse & { _retryCount: number };
     },
     getNextPageParam: (lastPage) => {
       // Return nextCursor if it exists, otherwise undefined (no more pages)

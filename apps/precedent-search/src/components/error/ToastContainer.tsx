@@ -69,7 +69,7 @@ export function ToastContainer({
 
   return (
     <div
-      className="fixed z-50 bottom-4 right-4 flex flex-col gap-2 sm:bottom-4 sm:right-4 max-sm:left-4 max-sm:right-4 max-sm:bottom-4"
+      className="fixed z-50 bottom-4 right-4 flex flex-col gap-2 max-sm:left-1/2 max-sm:right-auto max-sm:-translate-x-1/2 max-sm:bottom-4"
       aria-label="Notifications"
     >
       {visibleToasts.map((toast) => (

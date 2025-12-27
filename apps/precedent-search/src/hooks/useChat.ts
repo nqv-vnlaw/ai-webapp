@@ -106,6 +106,12 @@ export interface UseChatReturn {
   error: ChatError | null;
 
   /**
+   * Retry count from last successful API response
+   * Reflects automatic retries performed by API client
+   */
+  retryCount: number;
+
+  /**
    * Send a new message
    */
   sendMessage: (message: string, scope?: Scope) => Promise<void>;
@@ -157,6 +163,8 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   // Store last request payload for retry
   const lastRequestRef = useRef<ChatRequest | null>(null);
   const lastScopeRef = useRef<Scope>(defaultScope);
+  // Store retry count from last successful response
+  const lastRetryCountRef = useRef<number>(0);
 
   // Use API client mutation (rename to avoid naming collision)
   const chatMutation = useChatMutation();
@@ -216,7 +224,13 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
   /**
    * Handle successful response
    */
-  const handleSuccess = useCallback((response: ChatResponse) => {
+  const handleSuccess = useCallback(
+    (response: ChatResponse & { _retryCount?: number }) => {
+    // Store retry count from response for retry state tracking
+    if (response._retryCount !== undefined) {
+      lastRetryCountRef.current = response._retryCount;
+    }
+
     setState((prev) => {
       const newMessages: ChatMessage[] = [...prev.messages];
 
@@ -295,6 +309,9 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     async (message: string, scope: Scope = lastScopeRef.current) => {
       lastScopeRef.current = scope;
 
+      // Reset retry count at request start to avoid inheriting previous request's retryCount
+      lastRetryCountRef.current = 0;
+
       // Add user message to state immediately (optimistic update)
       // This improves UX: user sees their message right away, even if API fails
       // Reference: SRS §4.2.3 - better retry/recovery UX
@@ -330,6 +347,9 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
       throw new Error('No assistant message to regenerate');
     }
 
+    // Reset retry count at request start to avoid inheriting previous request's retryCount
+    lastRetryCountRef.current = 0;
+
     // Find last user message before last assistant
     const lastUserMessage = state.messages
       .slice()
@@ -359,6 +379,9 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     if (!lastRequestRef.current) {
       throw new Error('No previous request to retry');
     }
+
+    // Reset retry count at request start to avoid inheriting previous request's retryCount
+    lastRetryCountRef.current = 0;
 
     const response = await chatMutation.mutateAsync(lastRequestRef.current);
     handleSuccess(response);
@@ -435,6 +458,7 @@ export function useChat(options: UseChatOptions = {}): UseChatReturn {
     state,
     isLoading: chatMutation.isPending,
     error,
+    retryCount: lastRetryCountRef.current,
     sendMessage,
     regenerateLast,
     retryLast,

@@ -4,17 +4,23 @@
  * Full chat interface wired to useChat hook.
  * Renders messages, handles loading/error states, and provides action buttons.
  *
- * Reference: FR-CHAT-01 through FR-CHAT-06, FR-FB-01, FR-FB-02
+ * Reference: FR-CHAT-01 through FR-CHAT-06, FR-FB-01, FR-FB-02, FR-ERR-02, FR-ERR-03
  */
 
-import { useState, useCallback } from 'react';
-import { useChat, useFeedbackSubmit } from '../../hooks';
-import { useFlagsContext } from '../../contexts';
-import type { Scope } from '@vnlaw/api-client';
+import { useState, useCallback, useEffect } from 'react';
+import { useChat, useFeedbackSubmit, useRetryState } from '../../hooks';
+import { useFlagsContext, useToast } from '../../contexts';
+import type { Scope, ApiClientError } from '@vnlaw/api-client';
+import { useApiClient } from '@vnlaw/api-client';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { CitationsPanel } from '../citations';
 import { FeedbackButtons, FeedbackModal } from '../feedback';
+import {
+  RetryIndicator,
+  ManualRetryButton,
+  CircuitBreakerUI,
+} from '../error';
 import type { FeedbackRating } from '../feedback';
 
 export interface ChatContainerProps {
@@ -44,6 +50,7 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     state,
     isLoading,
     error,
+    retryCount: apiRetryCount,
     sendMessage,
     regenerateLast,
     retryLast,
@@ -62,8 +69,71 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     resetError: resetFeedbackError,
   } = useFeedbackSubmit();
 
+  const { showError } = useToast();
+  const client = useApiClient();
+
   const [inputValue, setInputValue] = useState('');
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
+
+  // Generate request key for retry state tracking
+  const requestKey = `chat:${state.conversationId || 'new'}:${scope}`;
+
+  // Get circuit breaker state from API client
+  const circuitBreakerState = client.getCircuitBreakerState('/v1/chat');
+  const apiError = error?.originalError as ApiClientError | undefined;
+  const isCircuitBreakerError = apiError?.error?.code === 'SERVICE_UNAVAILABLE';
+
+  // Track retry state per request key
+  const retryState = useRetryState({
+    requestKey,
+    maxRetries: 3,
+    circuitBreaker: {
+      isOpen: isCircuitBreakerError || circuitBreakerState.isOpen,
+      recoveryTimeMs: isCircuitBreakerError
+        ? (apiError?.error?.retryAfterSeconds || 0) * 1000
+        : circuitBreakerState.recoveryTimeMs,
+    },
+  });
+
+  // Sync retry state with useChat's retry count
+  useEffect(() => {
+    if (apiRetryCount > 0) {
+      // Update retry count from useChat hook
+      retryState.updateRetryCount(apiRetryCount);
+      if (isLoading) {
+        retryState.startRetry();
+      } else {
+        retryState.endRetry();
+        // Check if max retries exceeded
+        if (apiRetryCount >= retryState.maxRetries) {
+          retryState.setMaxExceeded();
+        }
+      }
+    } else if (!error && !isLoading) {
+      // Success - reset retry state
+      retryState.reset();
+    }
+  }, [apiRetryCount, error, isLoading, retryState]);
+
+  // Show toast for recoverable errors
+  useEffect(() => {
+    const isRetryable =
+      apiError &&
+      (apiError.error?.retryable === true ||
+        (apiError.status >= 500 && apiError.status < 600));
+    if (
+      apiError &&
+      isRetryable &&
+      !retryState.maxRetriesExceeded &&
+      apiRetryCount > 0 &&
+      isLoading
+    ) {
+      showError(
+        error?.message || 'Chat request failed. Retrying...',
+        error?.requestId
+      );
+    }
+  }, [apiError, error, retryState.maxRetriesExceeded, apiRetryCount, isLoading, showError]);
 
   const handleSubmit = useCallback(
     async (message: string) => {
@@ -121,6 +191,8 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
         rating,
         comment,
       });
+      // Mark feedback as submitted for this message
+      setSubmittedFeedbackMessageId(state.lastAssistantMessageId);
     },
     [state.conversationId, state.lastAssistantMessageId, submitFeedback]
   );
@@ -134,10 +206,17 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     resetFeedbackError();
   }, [resetFeedbackError]);
 
+  // Track which message has submitted feedback
+  const [submittedFeedbackMessageId, setSubmittedFeedbackMessageId] = useState<string | null>(null);
+
   const handleFeedbackModalSubmit = useCallback(
     async (comment?: string) => {
-      await handleFeedbackSubmit('down', comment);
-      handleFeedbackModalClose();
+      try {
+        await handleFeedbackSubmit('down', comment);
+        handleFeedbackModalClose();
+      } catch {
+        // Error is handled by feedbackError state
+      }
     },
     [handleFeedbackSubmit, handleFeedbackModalClose]
   );
@@ -154,30 +233,76 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
         </div>
       )}
 
-      {/* Error Banner */}
-      {error && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-3">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-red-800">
-                {error.message}
-              </p>
-              {error.requestId && (
-                <p className="text-xs text-red-600 mt-1">
-                  Request ID: {error.requestId}
-                </p>
-              )}
-            </div>
-            <button
-              onClick={handleRetry}
-              disabled={isLoading}
-              className="px-3 py-1 text-sm font-medium text-red-800 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Retry
-            </button>
-          </div>
+      {/* Retry Indicator */}
+      {retryState.isRetrying && (
+        <div className="bg-gray-50 border-b border-gray-200 px-4 py-2">
+          <RetryIndicator
+            isRetrying={retryState.isRetrying}
+            retryCount={retryState.retryCount}
+            maxRetries={retryState.maxRetries}
+          />
         </div>
       )}
+
+      {/* Circuit Breaker UI */}
+      {retryState.circuitBreaker.isOpen && (
+        <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-3">
+          <CircuitBreakerUI
+            isOpen={retryState.circuitBreaker.isOpen}
+            recoveryTimeMs={retryState.circuitBreaker.recoveryTimeMs}
+            onTryNow={async () => {
+              // Reset circuit breaker to allow immediate retry attempt
+              client.resetCircuitBreaker('/v1/chat');
+              retryState.reset();
+              await handleRetry();
+            }}
+            isLoading={isLoading}
+          />
+        </div>
+      )}
+
+      {/* Manual Retry Button (after max retries) */}
+      {retryState.maxRetriesExceeded && error && (
+        <div className="bg-red-50 border-b border-red-200 px-4 py-3">
+          <ManualRetryButton
+            onRetry={async () => {
+              retryState.reset();
+              await handleRetry();
+            }}
+            isLoading={isLoading}
+            error={error.message || 'Chat request failed after multiple attempts'}
+            requestId={error.requestId || undefined}
+          />
+        </div>
+      )}
+
+      {/* Error Banner (for non-retryable errors or when not retrying) */}
+      {error &&
+        !retryState.isRetrying &&
+        !retryState.maxRetriesExceeded &&
+        !retryState.circuitBreaker.isOpen && (
+          <div className="bg-red-50 border-b border-red-200 px-4 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-800">
+                  {error.message}
+                </p>
+                {error.requestId && (
+                  <p className="text-xs text-red-600 mt-1">
+                    Request ID: {error.requestId}
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={handleRetry}
+                disabled={isLoading}
+                className="px-3 py-1 text-sm font-medium text-red-800 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[200px]">
@@ -199,21 +324,6 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
               // Show actions only for the last assistant message
               const actions = isLastAssistant ? (
                 <div className="flex items-center gap-2">
-                  {/* Feedback buttons (only when enabled and have IDs) */}
-                  {feedbackEnabled &&
-                    state.conversationId &&
-                    state.lastAssistantMessageId && (
-                      <>
-                        <FeedbackButtons
-                          messageId={state.lastAssistantMessageId}
-                          conversationId={state.conversationId}
-                          onSubmit={handleFeedbackSubmit}
-                          onThumbsDown={handleThumbsDown}
-                          disabled={isLoading || isFeedbackLoading}
-                        />
-                        <span className="text-gray-300">|</span>
-                      </>
-                    )}
                   <button
                     onClick={handleRegenerate}
                     disabled={isLoading}
@@ -243,6 +353,25 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
                 </div>
               ) : null;
 
+              // Feedback buttons (only when enabled and have IDs, for last assistant message)
+              const feedbackButtons =
+                isLastAssistant &&
+                feedbackEnabled &&
+                state.conversationId &&
+                state.lastAssistantMessageId ? (
+                  <FeedbackButtons
+                    messageId={state.lastAssistantMessageId}
+                    conversationId={state.conversationId}
+                    onSubmit={handleFeedbackSubmit}
+                    onThumbsDown={handleThumbsDown}
+                    disabled={isLoading || isFeedbackLoading}
+                    isSubmitting={isFeedbackLoading}
+                    isSubmitted={
+                      submittedFeedbackMessageId === state.lastAssistantMessageId
+                    }
+                  />
+                ) : null;
+
               return (
                 <ChatMessage
                   key={index}
@@ -250,6 +379,7 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
                   content={message.content}
                   isLoading={false}
                   actions={actions}
+                  feedbackButtons={feedbackButtons}
                 />
               );
             })}

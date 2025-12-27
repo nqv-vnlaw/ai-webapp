@@ -40,6 +40,7 @@ export interface FeedbackButtonsProps {
 
   /**
    * Callback when thumbs down is clicked (opens modal)
+   * If not provided, thumbs down will submit directly without modal
    */
   onThumbsDown?: () => void;
 
@@ -47,6 +48,16 @@ export interface FeedbackButtonsProps {
    * Whether buttons are disabled
    */
   disabled?: boolean;
+
+  /**
+   * Whether feedback submission is in progress (from parent)
+   */
+  isSubmitting?: boolean;
+
+  /**
+   * Whether feedback was successfully submitted (from parent)
+   */
+  isSubmitted?: boolean;
 }
 
 /**
@@ -139,19 +150,28 @@ export function FeedbackButtons({
   onSubmit,
   onThumbsDown,
   disabled = false,
+  isSubmitting: externalIsSubmitting = false,
+  isSubmitted: externalIsSubmitted = false,
 }: FeedbackButtonsProps) {
   // Note: messageId and conversationId are passed for prop consistency
   // but the actual IDs are handled by the parent's onSubmit callback
   void _messageId;
   void _conversationId;
   const [state, setState] = useState<FeedbackState>('idle');
+  const [selectedRating, setSelectedRating] = useState<'up' | 'down' | null>(null);
+
+  // Use external state if provided, otherwise use internal state
+  const isSubmitting = externalIsSubmitting || state === 'submitting';
+  const isSubmitted = externalIsSubmitted || state === 'submitted';
 
   // Handle thumbs up click (submit immediately)
   const handleThumbsUp = useCallback(async () => {
-    if (disabled || state === 'submitting' || state === 'submitted') {
+    if (disabled || isSubmitting || isSubmitted) {
       return;
     }
 
+    setSelectedRating('up');
+    setState('selected_up');
     setState('submitting');
     try {
       await onSubmit('up');
@@ -159,23 +179,39 @@ export function FeedbackButtons({
     } catch {
       // Reset to idle on error
       setState('idle');
+      setSelectedRating(null);
     }
-  }, [disabled, state, onSubmit]);
+  }, [disabled, isSubmitting, isSubmitted, onSubmit]);
 
-  // Handle thumbs down click (open modal)
-  const handleThumbsDown = useCallback(() => {
-    if (disabled || state === 'submitting' || state === 'submitted') {
+  // Handle thumbs down click (open modal or submit directly)
+  const handleThumbsDown = useCallback(async () => {
+    if (disabled || isSubmitting || isSubmitted) {
       return;
     }
 
+    setSelectedRating('down');
     setState('selected_down');
-    onThumbsDown?.();
-  }, [disabled, state, onThumbsDown]);
 
-  const isSubmitting = state === 'submitting';
-  const isSubmitted = state === 'submitted';
-  const isSelectedUp = state === 'selected_up';
-  const isSelectedDown = state === 'selected_down';
+    if (onThumbsDown) {
+      // Open modal (parent handles submission)
+      onThumbsDown();
+    } else {
+      // Submit directly without modal
+      setState('submitting');
+      try {
+        await onSubmit('down');
+        setState('submitted');
+      } catch {
+        // Reset to idle on error
+        setState('idle');
+        setSelectedRating(null);
+      }
+    }
+  }, [disabled, isSubmitting, isSubmitted, onThumbsDown, onSubmit]);
+
+  // Determine selected states based on current state and selected rating
+  const isSelectedUp = state === 'selected_up' || (isSubmitted && selectedRating === 'up');
+  const isSelectedDown = state === 'selected_down' || (isSubmitted && selectedRating === 'down');
 
   // Show success indicator after submission
   if (isSubmitted) {
