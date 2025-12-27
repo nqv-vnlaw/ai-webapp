@@ -8,7 +8,14 @@
  */
 
 import { http, HttpResponse, delay } from 'msw';
-import type { SearchRequest, SearchResponse, ChatRequest, ChatResponse } from '@vnlaw/api-client';
+import type {
+  SearchRequest,
+  SearchResponse,
+  ChatRequest,
+  ChatResponse,
+  FeedbackRequest,
+  FeedbackResponse,
+} from '@vnlaw/api-client';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.vnlaw.app';
 
@@ -409,11 +416,178 @@ export const handlers = [
     );
   }),
 
+  // ============ Feedback Endpoints ============
+
+  /**
+   * POST /v1/feedback - Submit feedback on an answer
+   */
+  http.post(`${API_BASE_URL}/v1/feedback`, async ({ request }) => {
+    await simulateLatency();
+
+    const body = (await request.json()) as FeedbackRequest;
+    const { messageId, conversationId, type } = body;
+
+    // Validate required fields
+    if (!messageId || !conversationId || !type) {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid request. Please check your input.',
+            requestId: generateRequestId(),
+            details: {
+              fields: {
+                ...(messageId ? {} : { messageId: 'Message ID is required' }),
+                ...(conversationId ? {} : { conversationId: 'Conversation ID is required' }),
+                ...(type ? {} : { type: 'Feedback type is required' }),
+              },
+            },
+            retryable: false,
+            retryAfterSeconds: null,
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate type value
+    if (type !== 'up' && type !== 'down') {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid feedback type. Must be "up" or "down".',
+            requestId: generateRequestId(),
+            details: {
+              fields: {
+                type: 'Must be "up" or "down"',
+              },
+            },
+            retryable: false,
+            retryAfterSeconds: null,
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    // Success response
+    const response: FeedbackResponse = {
+      requestId: generateRequestId(),
+      status: 'received',
+    };
+    return HttpResponse.json(response, { status: 200 });
+  }),
+
   // ============ Error Scenarios (for testing) ============
 
   /**
-   * Error handlers can be triggered by adding query params or special headers
-   * For now, we'll handle errors through the main handlers above
-   * Additional error scenarios can be added as needed for testing
+   * Error test endpoints - Triggered by special query patterns:
+   * - Query containing "429" or "rate" -> Rate limit error
+   * - Query containing "500" or "server" -> Server error
+   * - Query containing "504" or "timeout" -> Gateway timeout
+   *
+   * These are handled in the main search/chat handlers above by checking the query.
+   * The handlers below provide dedicated test endpoints for more control.
    */
+
+  /**
+   * GET /test/error/429 - Simulate rate limit error
+   */
+  http.get(`${API_BASE_URL}/test/error/429`, async () => {
+    await simulateLatency();
+
+    return HttpResponse.json(
+      {
+        error: {
+          code: 'RATE_LIMITED',
+          message: 'Too many requests. Please wait before trying again.',
+          requestId: generateRequestId(),
+          details: {
+            retryAfterSeconds: 30,
+            currentUsage: 65,
+            limit: 60,
+          },
+          retryable: true,
+          retryAfterSeconds: 30,
+        },
+      },
+      {
+        status: 429,
+        headers: {
+          'Retry-After': '30',
+          'X-RateLimit-Limit': '60',
+          'X-RateLimit-Remaining': '0',
+          'X-RateLimit-Reset': String(Math.floor(Date.now() / 1000) + 30),
+        },
+      }
+    );
+  }),
+
+  /**
+   * GET /test/error/500 - Simulate internal server error
+   */
+  http.get(`${API_BASE_URL}/test/error/500`, async () => {
+    await simulateLatency();
+
+    return HttpResponse.json(
+      {
+        error: {
+          code: 'INTERNAL_ERROR',
+          message: 'An internal server error occurred. Please try again later.',
+          requestId: generateRequestId(),
+          details: null,
+          retryable: true,
+          retryAfterSeconds: null,
+        },
+      },
+      { status: 500 }
+    );
+  }),
+
+  /**
+   * GET /test/error/504 - Simulate gateway timeout
+   */
+  http.get(`${API_BASE_URL}/test/error/504`, async () => {
+    // Simulate longer delay for timeout
+    await delay(2000);
+
+    return HttpResponse.json(
+      {
+        error: {
+          code: 'GATEWAY_TIMEOUT',
+          message: 'The request timed out. Please try again.',
+          requestId: generateRequestId(),
+          details: null,
+          retryable: true,
+          retryAfterSeconds: null,
+        },
+      },
+      { status: 504 }
+    );
+  }),
+
+  /**
+   * GET /test/circuit-breaker - Simulate circuit breaker open state
+   */
+  http.get(`${API_BASE_URL}/test/circuit-breaker`, async () => {
+    await simulateLatency();
+
+    return HttpResponse.json(
+      {
+        error: {
+          code: 'CIRCUIT_OPEN',
+          message: 'Service temporarily unavailable due to repeated failures.',
+          requestId: generateRequestId(),
+          details: {
+            circuitState: 'open',
+            recoveryTimeMs: 30000,
+          },
+          retryable: true,
+          retryAfterSeconds: 30,
+        },
+      },
+      { status: 503 }
+    );
+  }),
 ];

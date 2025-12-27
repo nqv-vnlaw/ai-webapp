@@ -22,3 +22,20 @@ export type {
   ChatError,
 } from './useChat';
 
+export { useFeatureFlags } from './useFeatureFlags';
+export type { UseFeatureFlagsReturn } from './useFeatureFlags';
+
+export { useRetryState } from './useRetryState';
+export type {
+  UseRetryStateOptions,
+  UseRetryStateReturn,
+  RetryState,
+  CircuitBreakerStatus,
+} from './useRetryState';
+
+export { useFeedbackSubmit } from './useFeedbackSubmit';
+export type {
+  UseFeedbackSubmitOptions,
+  UseFeedbackSubmitReturn,
+} from './useFeedbackSubmit';
+
