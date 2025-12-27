@@ -4,15 +4,18 @@
  * Full chat interface wired to useChat hook.
  * Renders messages, handles loading/error states, and provides action buttons.
  *
- * Reference: FR-CHAT-01 through FR-CHAT-06
+ * Reference: FR-CHAT-01 through FR-CHAT-06, FR-FB-01, FR-FB-02
  */
 
 import { useState, useCallback } from 'react';
-import { useChat } from '../../hooks';
+import { useChat, useFeedbackSubmit } from '../../hooks';
+import { useFlagsContext } from '../../contexts';
 import type { Scope } from '@vnlaw/api-client';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { CitationsPanel } from '../citations';
+import { FeedbackButtons, FeedbackModal } from '../feedback';
+import type { FeedbackRating } from '../feedback';
 
 export interface ChatContainerProps {
   /**
@@ -48,7 +51,19 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     copyLastAnswer,
   } = useChat({ defaultScope: scope });
 
+  const { flags } = useFlagsContext();
+  const feedbackEnabled = flags.FEEDBACK_ENABLED;
+
+  const {
+    submitFeedback,
+    isLoading: isFeedbackLoading,
+    error: feedbackError,
+    errorRequestId: feedbackErrorRequestId,
+    resetError: resetFeedbackError,
+  } = useFeedbackSubmit();
+
   const [inputValue, setInputValue] = useState('');
+  const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
 
   const handleSubmit = useCallback(
     async (message: string) => {
@@ -93,6 +108,40 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
     }
   }, [retryLast]);
 
+  // Feedback handlers
+  const handleFeedbackSubmit = useCallback(
+    async (rating: FeedbackRating, comment?: string) => {
+      if (!state.conversationId || !state.lastAssistantMessageId) {
+        return;
+      }
+
+      await submitFeedback({
+        conversationId: state.conversationId,
+        messageId: state.lastAssistantMessageId,
+        rating,
+        comment,
+      });
+    },
+    [state.conversationId, state.lastAssistantMessageId, submitFeedback]
+  );
+
+  const handleThumbsDown = useCallback(() => {
+    setFeedbackModalOpen(true);
+  }, []);
+
+  const handleFeedbackModalClose = useCallback(() => {
+    setFeedbackModalOpen(false);
+    resetFeedbackError();
+  }, [resetFeedbackError]);
+
+  const handleFeedbackModalSubmit = useCallback(
+    async (comment?: string) => {
+      await handleFeedbackSubmit('down', comment);
+      handleFeedbackModalClose();
+    },
+    [handleFeedbackSubmit, handleFeedbackModalClose]
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Context Limit Warning Banner */}
@@ -131,7 +180,7 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
       )}
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[200px]">
         {state.messages.length === 0 && !isLoading && (
           <div className="text-center text-gray-500 py-8">
             <p className="text-lg font-medium mb-2">Start a conversation</p>
@@ -150,6 +199,21 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
               // Show actions only for the last assistant message
               const actions = isLastAssistant ? (
                 <div className="flex items-center gap-2">
+                  {/* Feedback buttons (only when enabled and have IDs) */}
+                  {feedbackEnabled &&
+                    state.conversationId &&
+                    state.lastAssistantMessageId && (
+                      <>
+                        <FeedbackButtons
+                          messageId={state.lastAssistantMessageId}
+                          conversationId={state.conversationId}
+                          onSubmit={handleFeedbackSubmit}
+                          onThumbsDown={handleThumbsDown}
+                          disabled={isLoading || isFeedbackLoading}
+                        />
+                        <span className="text-gray-300">|</span>
+                      </>
+                    )}
                   <button
                     onClick={handleRegenerate}
                     disabled={isLoading}
@@ -202,15 +266,15 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
         )}
       </div>
 
-      {/* Citations Panel */}
+      {/* Citations Panel - constrained height with scroll */}
       {state.lastCitations.length > 0 && (
-        <div className="border-t border-gray-200 bg-gray-50">
+        <div className="border-t border-gray-200 bg-gray-50 max-h-[250px] overflow-y-auto flex-shrink-0">
           <CitationsPanel citations={state.lastCitations} />
         </div>
       )}
 
       {/* Input Area */}
-      <div className="border-t border-gray-200 p-4 bg-white">
+      <div className="border-t border-gray-200 p-4 bg-white flex-shrink-0">
         <ChatInput
           value={inputValue}
           onChange={setInputValue}
@@ -218,6 +282,16 @@ export function ChatContainer({ scope = 'precedent' }: ChatContainerProps) {
           disabled={isLoading}
         />
       </div>
+
+      {/* Feedback Modal (for thumbs down comments) */}
+      <FeedbackModal
+        isOpen={feedbackModalOpen}
+        onClose={handleFeedbackModalClose}
+        onSubmit={handleFeedbackModalSubmit}
+        isLoading={isFeedbackLoading}
+        error={feedbackError?.message}
+        requestId={feedbackErrorRequestId}
+      />
     </div>
   );
 }

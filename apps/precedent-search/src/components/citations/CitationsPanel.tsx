@@ -41,7 +41,7 @@ export function CitationsPanel({
   }
 
   return (
-    <div className="p-4 bg-gray-50 border-t border-gray-200">
+    <div className="p-4">
       <h3 className="text-sm font-semibold text-gray-900 mb-3">{title}</h3>
       <div className="space-y-3">
         {citations.map((citation, index) => (
